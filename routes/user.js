@@ -5,39 +5,60 @@ const verifyToken = require('../middlewares/auth')
 
 // MAIN ROUTE: /api/user
 router.post('/createUser', verifyToken, (req, res) => {
-  const { pushToken, firebaseId, email } = req.body;
-  const { uid } = req.user; // firebaseID extrated from auth token
+  const { email, screenRatio } = req.body;
+  const { uid } = req.user;
 
-  if (!email || !uid || !pushToken || !firebaseId) {
-    console.error('Missing required fields: email, uid, or pushToken.');
-    return res.status(400).send('ERROR: Missing required fields.');
+  if (!email || !uid || !screenRatio) {
+    return res.status(400).send({ error: 'Missing required fields: email, uid, or screenRatio.' });
   }
 
-  // Database query to insert user
-  const query = 'INSERT INTO Users (email, firebaseId, pushToken) VALUES (?, ?, ?)';
+  const query = 'INSERT INTO Users (email, firebaseId, screenRatio) VALUES (?, ?, ?)';
 
-  db.query(query, [email, uid, pushToken], (err, results) => {
+  db.query(query, [email, uid, screenRatio], (err, results) => {
     if (err) {
-      // Log detailed error message
-      console.error(`Database insert error for user (${email}): ${err.message}`);
-
-      // Check if the error is due to a duplicate entry
       if (err.code === 'ER_DUP_ENTRY') {
-        console.error(`User with email ${email} already exists.`);
-        return res.status(409).send('ERROR: User already exists.');
+        return res.status(409).send({ error: 'User already exists.' });
       }
-
-      // Send generic 500 error for other issues
-      return res.status(500).send('ERROR: User not added to database.');
+      return res.status(500).send({ error: 'Failed to add user to database.', details: err.message });
     }
-
-    // Log success message
-    console.log(`User with email ${email} added to the database successfully.`);
-
-    // Respond with success
-    res.status(200).send('User added to database.');
+    res.status(200).send({ success: true });
   });
 });
+
+// // router.post('/createUser', verifyToken, (req, res) => {
+//   const { pushToken, firebaseId, email } = req.body;
+//   const { uid } = req.user; // firebaseID extrated from auth token
+
+//   if (!email || !uid || !pushToken || !firebaseId) {
+//     console.error('Missing required fields: email, uid, or pushToken.');
+//     return res.status(400).send('ERROR: Missing required fields.');
+//   }
+
+//   // Database query to insert user
+//   const query = 'INSERT INTO Users (email, firebaseId, pushToken) VALUES (?, ?, ?)';
+
+//   db.query(query, [email, uid, pushToken], (err, results) => {
+//     if (err) {
+//       // Log detailed error message
+//       console.error(`Database insert error for user (${email}): ${err.message}`);
+
+//       // Check if the error is due to a duplicate entry
+//       if (err.code === 'ER_DUP_ENTRY') {
+//         console.error(`User with email ${email} already exists.`);
+//         return res.status(409).send('ERROR: User already exists.');
+//       }
+
+//       // Send generic 500 error for other issues
+//       return res.status(500).send('ERROR: User not added to database.');
+//     }
+
+//     // Log success message
+//     console.log(`User with email ${email} added to the database successfully.`);
+
+//     // Respond with success
+//     res.status(200).send('User added to database.');
+//   });
+// });
 
 // Fetch user data by firebaseId
 router.get('/getUserData', verifyToken, (req, res) => {
@@ -107,24 +128,45 @@ router.post('/updateProfile', verifyToken, (req, res) => {
   });
 });
 
-
 router.post('/updatePushToken', verifyToken, (req, res) => {
-  const { pushToken } = req.body
-  const { uid } = req.user
-  const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?'
+  const { pushToken } = req.body;
+  const { uid } = req.user;
 
-  // console.log(req)
+  if (!pushToken) {
+    return res.status(400).send({ error: 'Missing push token.' });
+  }
+
+  const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?';
 
   db.query(query, [pushToken, uid], (err, results) => {
     if (err) {
-      console.error('Token update error: ' + err.message)
-      return res.status(500).send('Token not updated.')
+      return res.status(500).send({ error: 'Failed to update push token.', details: err.message });
     }
     if (results.affectedRows === 0) {
-      return res.status(404).send('User not found.')
+      return res.status(404).send({ error: 'User not found.' });
     }
-    res.status(200).send('Push token updated.')
-  })
-})
+    res.status(200).send({ success: true });
+  });
+});
+
+
+// router.post('/updatePushToken', verifyToken, (req, res) => {
+//   const { pushToken } = req.body
+//   const { uid } = req.user
+//   const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?'
+
+//   // console.log(req)
+
+//   db.query(query, [pushToken, uid], (err, results) => {
+//     if (err) {
+//       console.error('Token update error: ' + err.message)
+//       return res.status(500).send('Token not updated.')
+//     }
+//     if (results.affectedRows === 0) {
+//       return res.status(404).send('User not found.')
+//     }
+//     res.status(200).send('Push token updated.')
+//   })
+// })
 
 module.exports = router

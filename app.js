@@ -12,79 +12,6 @@ admin.initializeApp({
 const app = express()
 app.use(express.json())
 
-// app.post('/api/changeWallpaper', verifyToken, (req, res) => {
-//   const { fileName, recipientId, comment, reaction, type } = req.body;
-//   const requesterId = req.user.id;
-
-//   // Insert wallpaper into the Wallpapers table with type provided by the client
-//   const insertWallpaperQuery = `
-//     INSERT INTO Wallpapers (fileName, type)
-//     VALUES (?, ?)
-//   `;
-  
-//   db.query(insertWallpaperQuery, [fileName, type], (err, wallpaperResults) => {
-//     if (err) {
-//       console.error('Database insert error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not insert wallpaper record.');
-//     }
-
-//     const wallpaperId = wallpaperResults.insertId; // Get the wallpaper ID
-
-//     // Insert record into the SentWallpapers table with comment and reaction
-//     const insertSentWallpaperQuery = `
-//       INSERT INTO SentWallpapers (wallpaperId, requesterId, recipientId, comment, reaction)
-//       VALUES (?, ?, ?, ?, ?)
-//     `;
-//     db.query(
-//       insertSentWallpaperQuery,
-//       [wallpaperId, requesterId, recipientId, comment, reaction],
-//       (err, sentWallpaperResults) => {
-//         if (err) {
-//           console.error('Database insert error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not insert sent wallpaper record.');
-//         }
-
-//         // Fetch the recipient's push token for sending the notification
-//         const query = 'SELECT pushToken FROM Users WHERE id = ?';
-//         db.query(query, [recipientId], (err, results) => {
-//           if (err) {
-//             console.error('Database query error: ' + err.message);
-//             return res.status(500).send('ERROR: Could not fetch user push token.');
-//           }
-
-//           if (results.length > 0) {
-//             const pushToken = results[0].pushToken;
-
-//             const message = {
-//               data: {
-//                 type: 'wallpaper',
-//                 fileName: fileName,
-//                 wallpaperType: type,  // Changed "type" to "wallpaperType" to avoid name conflict
-//                 wallpaperId: wallpaperId.toString(),  // Send the wallpaper ID
-//                 requesterId: requesterId.toString(),
-//                 recipientId: recipientId.toString(),
-//                 timeSent: new Date().toISOString(),  // Timestamp of when the wallpaper was sent
-//               },
-//               token: pushToken,
-//             };
-
-//             admin.messaging().send(message)
-//               .then((result) => {
-//                 console.log(`Notification sent: ${result}`);
-//                 res.json({ success: true, result: sentWallpaperResults });
-//               })
-//               .catch((error) => {
-//                 console.error('Notification sending error: ', error);
-//                 res.status(500).send(error);
-//               });
-//           } else {
-//             res.status(404).send(`User with id ${recipientId} not found.`);
-//           }
-//         });
-//       }
-//     );
-//   });
-// });
 
 app.post('/api/changeWallpaper', verifyToken, (req, res) => {
   const { fileName, recipientId, comment, reaction, type } = req.body;
@@ -218,154 +145,6 @@ app.get('/api/getRecipientData/:recipientId', verifyToken, (req, res) => {
 
 
 
-// app.get('/api/wallpaperHistory/:userId', verifyToken, (req, res) => {
-//   const userId = req.params.userId;
-//   const page = parseInt(req.query.page) || 0; // Default to page 0
-//   const pageSize = parseInt(req.query.pageSize) || 10; // Default to page size 10
-
-//   const offset = page * pageSize;
-
-//   const query = `
-//       SELECT * FROM Wallpapers
-//       WHERE requesterId = ? OR recipientId = ?
-//       ORDER BY dateCreated DESC
-//       LIMIT ? OFFSET ?
-//   `;
-
-//   db.query(query, [userId, userId, pageSize, offset], (err, results) => {
-//       if (err) {
-//           console.error('Database query error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not fetch wallpaper history.');
-//       }
-
-//       res.json(results);
-//   });
-// });
-// app.get('/api/wallpaperHistory/:userId', verifyToken, (req, res) => {
-//   const userId = req.params.userId;
-//   const page = parseInt(req.query.page) || 0; // Default to page 0
-//   const pageSize = parseInt(req.query.pageSize) || 10; // Default to page size 10
-
-//   const offset = page * pageSize;
-
-//   const query = `
-//       SELECT w.id, w.fileName, w.type, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-//       FROM SentWallpapers s
-//       JOIN Wallpapers w ON s.wallpaperId = w.id
-//       WHERE s.requesterId = ? OR s.recipientId = ?
-//       ORDER BY s.timeSent DESC
-//       LIMIT ? OFFSET ?
-//   `;
-
-//   db.query(query, [userId, userId, pageSize, offset], (err, results) => {
-//       if (err) {
-//           console.error('Database query error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not fetch wallpaper history.');
-//       }
-
-//       res.json(results);
-//   });
-// });
-// app.get('/api/wallpaperHistory/:recipientId', verifyToken, (req, res) => {
-//   const recipientId = req.params.recipientId; // The other user's ID (recipient)
-//   const firebaseId = req.user.uid; // Extract Firebase ID from the token
-
-//   const page = parseInt(req.query.page) || 0; // Default to page 0
-//   const pageSize = parseInt(req.query.pageSize) || 10; // Default to page size 10
-//   const offset = page * pageSize;
-
-//   // First, find the logged-in user's ID using their Firebase ID
-//   const getUserIdQuery = `SELECT id FROM Users WHERE firebaseId = ?`;
-  
-//   db.query(getUserIdQuery, [firebaseId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error (get user ID): ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch user ID.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: User not found.');
-//     }
-
-//     const loggedInUserId = results[0].id;
-
-//     // Now retrieve wallpaper history between the logged-in user and the recipient
-//     const wallpaperHistoryQuery = `
-//       SELECT w.id, w.fileName, w.type, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-//       FROM SentWallpapers s
-//       JOIN Wallpapers w ON s.wallpaperId = w.id
-//       WHERE (s.requesterId = ? AND s.recipientId = ?)
-//          OR (s.requesterId = ? AND s.recipientId = ?)
-//       ORDER BY s.timeSent DESC
-//       LIMIT ? OFFSET ?
-//     `;
-
-//     db.query(wallpaperHistoryQuery, 
-//       [loggedInUserId, recipientId, recipientId, loggedInUserId, pageSize, offset], 
-//       (err, results) => {
-//         if (err) {
-//           console.error('Database query error (wallpaper history): ' + err.message);
-//           return res.status(500).send('ERROR: Could not fetch wallpaper history.');
-//         }
-
-//         res.json(results);
-//       });
-//   });
-// });
-
-
-// 1
-
-// app.get('/api/wallpaperHistory/:recipientId', verifyToken, (req, res) => {
-//   const recipientId = req.params.recipientId; 
-//   const firebaseId = req.user.uid; 
-
-//   const page = parseInt(req.query.page) || 0;
-//   const pageSize = parseInt(req.query.pageSize) || 15; 
-//   const offset = page * pageSize;
-
-//   const getUserIdQuery = `SELECT id FROM Users WHERE firebaseId = ?`;
-
-//   db.query(getUserIdQuery, [firebaseId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error (get user ID): ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch user ID.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: User not found.');
-//     }
-
-//     const loggedInUserId = results[0].id;
-
-//     const wallpaperHistoryQuery = `
-//       SELECT w.id, w.fileName, w.type, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-//       FROM SentWallpapers s
-//       JOIN Wallpapers w ON s.wallpaperId = w.id
-//       WHERE (s.requesterId = ? AND s.recipientId = ?)
-//          OR (s.requesterId = ? AND s.recipientId = ?)
-//       ORDER BY s.timeSent DESC
-//       LIMIT ? OFFSET ?
-//     `;
-
-//     db.query(wallpaperHistoryQuery, 
-//       [loggedInUserId, recipientId, recipientId, loggedInUserId, pageSize, offset], 
-//       (err, results) => {
-//         if (err) {
-//           console.error('Database query error (wallpaper history): ' + err.message);
-//           return res.status(500).send('ERROR: Could not fetch wallpaper history.');
-//         }
-
-//         // You can include totalCount if needed for better client-side handling.
-//         res.json({
-//           data: results,
-//           page: page,
-//           pageSize: pageSize,
-//           endReached: results.length < pageSize // Indicate end of pagination
-//         });
-//       });
-//   });
-// });
 app.get('/api/wallpaperHistory/:recipientId', verifyToken, (req, res) => {
   const recipientId = req.params.recipientId; 
   const firebaseId = req.user.uid; 
@@ -503,195 +282,6 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
 });
 
 
-// app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
-//   const { wallpaperId, reaction } = req.body;
-//   const userId = req.user.id; // The user who is adding the reaction
-
-//   //return res.status(500).send('ERROR: fuck');
-
-//   const updateReactionQuery = `
-//     UPDATE SentWallpapers 
-//     SET reaction = ? 
-//     WHERE wallpaperId = ? 
-//     AND (requesterId = ? OR recipientId = ?)
-//   `;
-
-
-//   db.query(updateReactionQuery, [reaction, wallpaperId, userId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not add reaction.');
-//     }
-
-//     // Fetch the complete wallpaper data for the notification
-//     const getWallpaperQuery = `
-//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-//       FROM SentWallpapers s
-//       JOIN Wallpapers w ON s.wallpaperId = w.id
-//       WHERE w.id = ?
-//     `;
-
-//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
-//       if (err) {
-//         console.error('Error fetching wallpaper data for notification: ' + err.message);
-//         return res.status(500).send('ERROR: Could not notify recipient.');
-//       }
-
-//       if (results.length > 0) {
-//         const wallpaper = results[0];
-
-//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
-//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
-
-//         // Fetch the push token of the user who should be notified
-//         const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
-
-//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
-//           if (err) {
-//             console.error('Error fetching push token: ' + err.message);
-//             return res.status(500).send('ERROR: Could not notify recipient.');
-//           }
-
-//           const pushToken = tokenResults[0]?.pushToken;
-//           if (pushToken) {
-//             // Create WallpaperHistoryResponse object for the notification
-//             const message = {
-//               data: {
-//                 type: "reaction",  // Notification type
-//                 wallpaperId: wallpaper.id.toString(),
-//                 fileName: wallpaper.fileName,
-//                 wallpaperType: wallpaper.wallpaperType,  // Make sure this is a string
-//                 requesterId: wallpaper.requesterId.toString(),
-//                 recipientId: wallpaper.recipientId.toString(),
-//                 comment: wallpaper.comment || "",  // Handle null comments
-//                 reaction: reaction || "",  // Handle null reactions
-//                 timeSent: wallpaper.timeSent // Ensure it's a proper string
-//               },
-//               token: pushToken
-//             };
-            
-
-//             admin.messaging().send(message)
-//               .then(response => {
-//                 console.log('Reaction notification sent successfully:', response);
-//               })
-//               .catch(error => {
-//                 console.error('Error sending reaction notification:', error);
-//                 return res.status(404).send('ERROR: Wallpaper not found:', error);
-//               });
-//           } else {
-//             return res.status(404).send('NO PuSH token');
-//           }
-//         });
-//       } else {
-//         return res.status(404).send('ERROR: Wallpaper not found.');
-//       }
-//     });
-
-//     res.json({ success: true });
-//   });
-// });
-
-
-
-
-// app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
-//   const { wallpaperId, reaction } = req.body;
-//   const userId = req.user.id;
-
-//   const query = `
-//     UPDATE SentWallpapers 
-//     SET reaction = ? 
-//     WHERE wallpaperId = ? 
-//     AND (requesterId = ? OR recipientId = ?)
-//   `;
-
-//   db.query(query, [reaction, wallpaperId, userId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not add reaction.');
-//     }
-
-//     res.json({ success: true });
-//   });
-// });
-
-
-// app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
-//   const { wallpaperId } = req.body;
-//   const userId = req.user.id; // This is the person performing the action (removing the reaction)
-
-//   const query = `
-//     UPDATE SentWallpapers 
-//     SET reaction = NULL 
-//     WHERE wallpaperId = ? 
-//     AND (requesterId = ? OR recipientId = ?)
-//   `;
-
-//   db.query(query, [wallpaperId, userId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not remove reaction.');
-//     }
-
-//     // Fetch the wallpaper's requesterId and recipientId to determine who should receive the notification
-//     const getRecipientQuery = `
-//       SELECT requesterId, recipientId 
-//       FROM SentWallpapers 
-//       WHERE wallpaperId = ?
-//     `;
-
-//     db.query(getRecipientQuery, [wallpaperId], (err, results) => {
-//       if (err) {
-//         console.error('Error fetching recipient for notification: ' + err.message);
-//         return res.status(500).send('ERROR: Could not notify recipient.');
-//       }
-
-//       if (results.length > 0) {
-//         const { requesterId, recipientId } = results[0];
-
-//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
-//         const notifyUserId = (userId === requesterId) ? recipientId : requesterId;
-
-//         // Fetch the push token of the user who should be notified
-//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
-
-//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
-//           if (err) {
-//             console.error('Error fetching push token: ' + err.message);
-//             return res.status(500).send('ERROR: Could not notify recipient.');
-//           }
-
-//           const pushToken = tokenResults[0]?.pushToken;
-//           if (pushToken) {
-//             // Send FCM notification for reaction removal to the recipient
-//             const message = {
-//               data: {
-//                 type: "reaction_removed",
-//                 wallpaperId: wallpaperId.toString(),
-//               },
-//               token: pushToken
-//             };
-
-//             admin.messaging().send(message)
-//               .then(response => {
-//                 console.log('Reaction removal notification sent successfully:', response);
-//               })
-//               .catch(error => {
-//                 console.error('Error sending reaction removal notification:', error);
-//               });
-//           }
-//         });
-//       } else {
-//         return res.status(404).send('ERROR: Wallpaper not found.');
-//       }
-//     });
-
-//     res.json({ success: true });
-//   });
-// });
-
-
 app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
   const { wallpaperId } = req.body;
   const userId = req.user.id; // This is the person performing the action (removing the reaction)
@@ -781,79 +371,6 @@ app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
 
 
 
-// app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
-//   const { wallpaperId, comment } = req.body;
-//   const userId = req.user.id; // The user who is adding the comment
-
-//   const query = `
-//     UPDATE SentWallpapers 
-//     SET comment = ? 
-//     WHERE wallpaperId = ? 
-//     AND (requesterId = ? OR recipientId = ?)
-//   `;
-
-//   db.query(query, [comment, wallpaperId, userId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not add comment.');
-//     }
-
-//     // Fetch the wallpaper's requesterId and recipientId to determine who should receive the notification
-//     const getRecipientQuery = `
-//       SELECT requesterId, recipientId 
-//       FROM SentWallpapers 
-//       WHERE wallpaperId = ?
-//     `;
-
-//     db.query(getRecipientQuery, [wallpaperId], (err, results) => {
-//       if (err) {
-//         console.error('Error fetching recipient for notification: ' + err.message);
-//         return res.status(500).send('ERROR: Could not notify recipient.');
-//       }
-
-//       if (results.length > 0) {
-//         const { requesterId, recipientId } = results[0];
-
-//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
-//         const notifyUserId = (userId === requesterId) ? recipientId : requesterId;
-
-//         // Fetch the push token of the user who should be notified
-//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
-
-//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
-//           if (err) {
-//             console.error('Error fetching push token: ' + err.message);
-//             return res.status(500).send('ERROR: Could not notify recipient.');
-//           }
-
-//           const pushToken = tokenResults[0]?.pushToken;
-//           if (pushToken) {
-//             // Send FCM notification for the comment to the recipient
-//             const message = {
-//               data: {
-//                 type: "comment",
-//                 comment: comment,
-//               },
-//               token: pushToken
-//             };
-
-//             admin.messaging().send(message)
-//               .then(response => {
-//                 console.log('Comment notification sent successfully:', response);
-//               })
-//               .catch(error => {
-//                 console.error('Error sending comment notification:', error);
-//               });
-//           }
-//         });
-//       } else {
-//         return res.status(404).send('ERROR: Wallpaper not found.');
-//       }
-//     });
-
-//     res.json({ success: true });
-//   });
-// });
 
 app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
   const { wallpaperId, comment } = req.body;
@@ -984,46 +501,6 @@ app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
 
 
 
-// app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
-//   const { friendshipId, lastMessageId } = req.body;
-//   const userId = req.user.id;
-
-//   // Ensure the user is part of the friendship
-//   const checkFriendshipQuery = `
-//     SELECT friendship_id 
-//     FROM Friendships 
-//     WHERE friendship_id = ? 
-//     AND (requester_id = ? OR addressee_id = ?)
-//   `;
-
-//   db.query(checkFriendshipQuery, [friendshipId, userId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Unable to verify friendship.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     // Update the last message status to 'read'
-//     const updateMessageStatusQuery = `
-//       UPDATE Wallpapers 
-//       SET status = 'read' 
-//       WHERE id = ? AND status = 'unread'
-//     `;
-
-//     db.query(updateMessageStatusQuery, [lastMessageId], (err, results) => {
-//       if (err) {
-//         console.error('Database update error: ' + err.message);
-//         return res.status(500).send('ERROR: Unable to mark messages as read.');
-//       }
-
-//       res.json({ success: true });
-//     });
-//   });
-// });
-
 
 
 
@@ -1049,73 +526,56 @@ app.listen(3000, () => {
   console.log('Server runs at port 3000')
 })
 
-
-
-// EXPLORE ----------
 app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
   const page = parseInt(req.query.page) || 0; // Default to page 0
   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
-  
-  const offsetNew = page * Math.ceil(pageSize / 2); // Offset for "New" wallpapers
-  const offsetPopular = page * Math.floor(pageSize / 2); // Offset for "Popular" wallpapers
+  const offset = page * pageSize; // Offset for pagination
 
-  const newWallpapersQuery = `
+  // Adjusted query to fetch both 'New' and 'Popular' wallpapers, sorted by 'order'
+  const wallpapersQuery = `
     SELECT * FROM Wallpapers
-    WHERE type = 'new'
-    ORDER BY dateCreated DESC
+    WHERE type IN ('New', 'Popular')
+    ORDER BY \`order\` ASC,
+             CASE 
+               WHEN type = 'New' THEN dateCreated 
+               WHEN type = 'Popular' THEN savedCount 
+             END DESC
     LIMIT ? OFFSET ?
   `;
 
-  const popularWallpapersQuery = `
-    SELECT * FROM Wallpapers
-    WHERE type = 'popular'
-    ORDER BY savedCount DESC
-    LIMIT ? OFFSET ?
-  `;
-
-  const results = [];
-
-  // Fetch the new wallpapers
-  db.query(newWallpapersQuery, [Math.ceil(pageSize / 2), offsetNew], (err, newWallpapers) => {
+  db.query(wallpapersQuery, [pageSize, offset], (err, wallpapers) => {
     if (err) {
-      console.error('Database query error (new): ' + err.message);
-      return res.status(500).send('ERROR: Could not fetch new wallpapers.');
+      console.error('Database query error: ' + err.message);
+      return res.status(500).send('ERROR: Could not fetch wallpapers.');
     }
+
+    // Split the results into 'New' and 'Popular' groups
+    const newWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'New');
+    const popularWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'Popular');
+
+    const combinedResults = [];
+    const newGroupSize = 3;  // Number of new wallpapers in each group
+    const popularGroupSize = 3;  // Number of popular wallpapers in each group
+
+    const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
     
-    results.push(...newWallpapers);
-
-    // Fetch the popular wallpapers
-    db.query(popularWallpapersQuery, [Math.floor(pageSize / 2), offsetPopular], (err, popularWallpapers) => {
-      if (err) {
-        console.error('Database query error (popular): ' + err.message);
-        return res.status(500).send('ERROR: Could not fetch popular wallpapers.');
+    for (let i = 0; i < maxIterations; i += newGroupSize) {
+      // Push 3 new wallpapers first
+      for (let j = 0; j < newGroupSize; j++) {
+        if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
       }
-      
-      results.push(...popularWallpapers);
-
-      // Sorting the results in groups of 3 New, 3 Popular, 3 New, etc.
-      const combinedResults = [];
-      const newGroupSize = 3;  // Number of new wallpapers in each group
-      const popularGroupSize = 3;  // Number of popular wallpapers in each group
-
-      const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
-      
-      for (let i = 0; i < maxIterations; i += newGroupSize) {
-        // Push 3 new wallpapers first
-        for (let j = 0; j < newGroupSize; j++) {
-          if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
-        }
-        // Then push 3 popular wallpapers
-        for (let j = 0; j < popularGroupSize; j++) {
-          if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
-        }
+      // Then push 3 popular wallpapers
+      for (let j = 0; j < popularGroupSize; j++) {
+        if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
       }
+    }
 
-      res.json(combinedResults);
-    });
+    res.json(combinedResults);
   });
 });
 
+
+// // EXPLORE ----------
 // app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
 //   const page = parseInt(req.query.page) || 0; // Default to page 0
 //   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
@@ -1123,17 +583,19 @@ app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
 //   const offsetNew = page * Math.ceil(pageSize / 2); // Offset for "New" wallpapers
 //   const offsetPopular = page * Math.floor(pageSize / 2); // Offset for "Popular" wallpapers
 
+//   // Adjusted query to consider 'order' for 'New' wallpapers, then by dateCreated
 //   const newWallpapersQuery = `
 //     SELECT * FROM Wallpapers
-//     WHERE type = 'new'
-//     ORDER BY dateCreated DESC
+//     WHERE type = 'New'
+//     ORDER BY \`order\` ASC, dateCreated DESC
 //     LIMIT ? OFFSET ?
 //   `;
 
+//   // Adjusted query to consider 'order' for 'Popular' wallpapers, then by savedCount
 //   const popularWallpapersQuery = `
 //     SELECT * FROM Wallpapers
-//     WHERE type = 'popular'
-//     ORDER BY sentCount DESC
+//     WHERE type = 'Popular'
+//     ORDER BY \`order\` ASC, savedCount DESC
 //     LIMIT ? OFFSET ?
 //   `;
 
@@ -1157,13 +619,22 @@ app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
       
 //       results.push(...popularWallpapers);
 
-//       // Sort the wallpapers in the pattern (based on pageSize provided by client)
+//       // Sorting the results in groups of 3 New, 3 Popular, 3 New, etc.
 //       const combinedResults = [];
-//       const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
+//       const newGroupSize = 3;  // Number of new wallpapers in each group
+//       const popularGroupSize = 3;  // Number of popular wallpapers in each group
 
-//       for (let i = 0; i < maxIterations; i++) {
-//         if (newWallpapers[i]) combinedResults.push(newWallpapers[i]);
-//         if (popularWallpapers[i]) combinedResults.push(popularWallpapers[i]);
+//       const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
+      
+//       for (let i = 0; i < maxIterations; i += newGroupSize) {
+//         // Push 3 new wallpapers first
+//         for (let j = 0; j < newGroupSize; j++) {
+//           if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
+//         }
+//         // Then push 3 popular wallpapers
+//         for (let j = 0; j < popularGroupSize; j++) {
+//           if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
+//         }
 //       }
 
 //       res.json(combinedResults);
@@ -1171,6 +642,71 @@ app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
 //   });
 // });
 
+
+// // EXPLORE ----------
+// app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
+//   const page = parseInt(req.query.page) || 0; // Default to page 0
+//   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
+  
+//   const offsetNew = page * Math.ceil(pageSize / 2); // Offset for "New" wallpapers
+//   const offsetPopular = page * Math.floor(pageSize / 2); // Offset for "Popular" wallpapers
+
+//   const newWallpapersQuery = `
+//     SELECT * FROM Wallpapers
+//     WHERE type = 'new'
+//     ORDER BY dateCreated DESC
+//     LIMIT ? OFFSET ?
+//   `;
+
+//   const popularWallpapersQuery = `
+//     SELECT * FROM Wallpapers
+//     WHERE type = 'popular'
+//     ORDER BY savedCount DESC
+//     LIMIT ? OFFSET ?
+//   `;
+
+//   const results = [];
+
+//   // Fetch the new wallpapers
+//   db.query(newWallpapersQuery, [Math.ceil(pageSize / 2), offsetNew], (err, newWallpapers) => {
+//     if (err) {
+//       console.error('Database query error (new): ' + err.message);
+//       return res.status(500).send('ERROR: Could not fetch new wallpapers.');
+//     }
+    
+//     results.push(...newWallpapers);
+
+//     // Fetch the popular wallpapers
+//     db.query(popularWallpapersQuery, [Math.floor(pageSize / 2), offsetPopular], (err, popularWallpapers) => {
+//       if (err) {
+//         console.error('Database query error (popular): ' + err.message);
+//         return res.status(500).send('ERROR: Could not fetch popular wallpapers.');
+//       }
+      
+//       results.push(...popularWallpapers);
+
+//       // Sorting the results in groups of 3 New, 3 Popular, 3 New, etc.
+//       const combinedResults = [];
+//       const newGroupSize = 3;  // Number of new wallpapers in each group
+//       const popularGroupSize = 3;  // Number of popular wallpapers in each group
+
+//       const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
+      
+//       for (let i = 0; i < maxIterations; i += newGroupSize) {
+//         // Push 3 new wallpapers first
+//         for (let j = 0; j < newGroupSize; j++) {
+//           if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
+//         }
+//         // Then push 3 popular wallpapers
+//         for (let j = 0; j < popularGroupSize; j++) {
+//           if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
+//         }
+//       }
+
+//       res.json(combinedResults);
+//     });
+//   });
+// });
 
 
 app.post('/api/saveWallpaper', verifyToken, (req, res) => {
