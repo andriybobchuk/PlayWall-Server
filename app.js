@@ -576,6 +576,82 @@ app.get('/api/wallpaperHistory/:recipientId', verifyToken, (req, res) => {
 });
 
 
+// app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
+//   const { wallpaperId, reaction } = req.body;
+//   const userId = req.user.id; // The user who is adding the reaction
+
+//   const query = `
+//     UPDATE SentWallpapers 
+//     SET reaction = ? 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(query, [reaction, wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not add reaction.');
+//     }
+
+//     // Fetch the wallpaper's requesterId and recipientId to determine who should receive the notification
+//     const getRecipientQuery = `
+//       SELECT requesterId, recipientId 
+//       FROM SentWallpapers 
+//       WHERE wallpaperId = ?
+//     `;
+
+//     db.query(getRecipientQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching recipient for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const { requesterId, recipientId } = results[0];
+
+//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
+//         const notifyUserId = (userId === requesterId) ? recipientId : requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+        
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Send FCM notification for the reaction to the recipient
+//             const message = {
+//               data: {
+//                 type: "reaction",
+//                 reaction: reaction,
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Reaction notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending reaction notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// });
+
+
 app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
   const { wallpaperId, reaction } = req.body;
   const userId = req.user.id; // The user who is adding the reaction
@@ -615,7 +691,6 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
         // Fetch the push token of the user who should be notified
         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
         
-
         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
           if (err) {
             console.error('Error fetching push token: ' + err.message);
@@ -628,6 +703,9 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
             const message = {
               data: {
                 type: "reaction",
+                wallpaperId: wallpaperId.toString(),  // Include wallpaperId
+                requesterId: requesterId.toString(),    // Include requesterId
+                recipientId: recipientId.toString(),    // Include recipientId
                 reaction: reaction,
               },
               token: pushToken
@@ -652,6 +730,278 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
 });
 
 
+
+
+
+
+// app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
+//   const { wallpaperId } = req.body;
+//   const userId = req.user.id; // This is the person performing the action (removing the reaction)
+
+//   const updateReactionQuery = `
+//     UPDATE SentWallpapers 
+//     SET reaction = NULL 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(updateReactionQuery, [wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not remove reaction.');
+//     }
+
+//     // Fetch the complete wallpaper data for the notification
+//     const getWallpaperQuery = `
+//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
+//       FROM SentWallpapers s
+//       JOIN Wallpapers w ON s.wallpaperId = w.id
+//       WHERE w.id = ?
+//     `;
+
+//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching wallpaper data for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const wallpaper = results[0];
+
+//         // Determine who should receive the notification
+//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Create WallpaperHistoryResponse object for the notification
+//             const wallpaperHistoryResponse = {
+//               id: wallpaper.id,
+//               fileName: wallpaper.fileName,
+//               wallpaperType: wallpaper.wallpaperType,
+//               requesterId: wallpaper.requesterId,
+//               recipientId: wallpaper.recipientId,
+//               comment: wallpaper.comment,
+//               reaction: null,  // Reaction is now removed
+//               timeSent: wallpaper.timeSent
+//             };
+
+//             // Send FCM notification with the WallpaperHistoryResponse
+//             const message = {
+//               data: {
+//                 type: "reaction_removed",  // Notification type
+//                 ...wallpaperHistoryResponse
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Reaction removal notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending reaction removal notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// // });
+// app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
+//   const { wallpaperId } = req.body;
+//   const userId = req.user.id; // This is the person performing the action (removing the reaction)
+
+//   const updateReactionQuery = `
+//     UPDATE SentWallpapers 
+//     SET reaction = NULL 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(updateReactionQuery, [wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not remove reaction.');
+//     }
+
+//     // Fetch the complete wallpaper data for the notification
+//     const getWallpaperQuery = `
+//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
+//       FROM SentWallpapers s
+//       JOIN Wallpapers w ON s.wallpaperId = w.id
+//       WHERE w.id = ?
+//     `;
+
+//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching wallpaper data for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const wallpaper = results[0];
+
+//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
+//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Create WallpaperHistoryResponse object for the notification
+//             const wallpaperHistoryResponse = {
+//               id: wallpaper.id,
+//               fileName: wallpaper.fileName,
+//               wallpaperType: wallpaper.wallpaperType,
+//               requesterId: wallpaper.requesterId,
+//               recipientId: wallpaper.recipientId,
+//               comment: wallpaper.comment,
+//               reaction: null,  // Reaction is now removed
+//               timeSent: wallpaper.timeSent
+//             };
+
+//             // Send FCM notification with the WallpaperHistoryResponse
+//             const message = {
+//               data: {
+//                 type: "reaction_removed",  // Notification type
+//                 id: wallpaperHistoryResponse.id.toString(), // Include id
+//                 fileName: wallpaperHistoryResponse.fileName, // Include fileName
+//                 wallpaperType: wallpaperHistoryResponse.wallpaperType, // Include wallpaperType
+//                 requesterId: wallpaperHistoryResponse.requesterId.toString(), // Include requesterId
+//                 recipientId: wallpaperHistoryResponse.recipientId.toString(), // Include recipientId
+//                 comment: wallpaperHistoryResponse.comment || "", // Include comment
+//                 reaction: wallpaperHistoryResponse.reaction, // Include reaction
+//                 timeSent: wallpaperHistoryResponse.timeSent, // Include timeSent
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Reaction removal notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending reaction removal notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// });
+
+
+
+// app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
+//   const { wallpaperId, comment } = req.body;
+//   const userId = req.user.id; // The user who is adding the comment
+
+//   const updateCommentQuery = `
+//     UPDATE SentWallpapers 
+//     SET comment = ? 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(updateCommentQuery, [comment, wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not add comment.');
+//     }
+
+//     // Fetch the complete wallpaper data for the notification
+//     const getWallpaperQuery = `
+//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
+//       FROM SentWallpapers s
+//       JOIN Wallpapers w ON s.wallpaperId = w.id
+//       WHERE w.id = ?
+//     `;
+
+//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching wallpaper data for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const wallpaper = results[0];
+
+//         // Determine who should receive the notification
+//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Create WallpaperHistoryResponse object for the notification
+//             const wallpaperHistoryResponse = {
+//               id: wallpaper.id,
+//               fileName: wallpaper.fileName,
+//               wallpaperType: wallpaper.wallpaperType,
+//               requesterId: wallpaper.requesterId,
+//               recipientId: wallpaper.recipientId,
+//               comment: comment, // Updated with new comment
+//               reaction: wallpaper.reaction, // Keep the reaction unchanged
+//               timeSent: wallpaper.timeSent
+//             };
+
+//             // Send FCM notification with the WallpaperHistoryResponse
+//             const message = {
+//               data: {
+//                 type: "comment",
+//                 ...wallpaperHistoryResponse
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Comment notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending comment notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// });
 app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
   const { wallpaperId } = req.body;
   const userId = req.user.id; // This is the person performing the action (removing the reaction)
@@ -669,25 +1019,24 @@ app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
       return res.status(500).send('ERROR: Could not remove reaction.');
     }
 
-    // Fetch the complete wallpaper data for the notification
-    const getWallpaperQuery = `
-      SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-      FROM SentWallpapers s
-      JOIN Wallpapers w ON s.wallpaperId = w.id
-      WHERE w.id = ?
+    // Fetch the wallpaper's requesterId and recipientId to determine who should receive the notification
+    const getRecipientQuery = `
+      SELECT requesterId, recipientId 
+      FROM SentWallpapers 
+      WHERE wallpaperId = ?
     `;
 
-    db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+    db.query(getRecipientQuery, [wallpaperId], (err, results) => {
       if (err) {
-        console.error('Error fetching wallpaper data for notification: ' + err.message);
+        console.error('Error fetching recipient for notification: ' + err.message);
         return res.status(500).send('ERROR: Could not notify recipient.');
       }
 
       if (results.length > 0) {
-        const wallpaper = results[0];
+        const { requesterId, recipientId } = results[0];
 
         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
-        const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+        const notifyUserId = (userId === requesterId) ? recipientId : requesterId;
 
         // Fetch the push token of the user who should be notified
         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
@@ -700,23 +1049,15 @@ app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
 
           const pushToken = tokenResults[0]?.pushToken;
           if (pushToken) {
-            // Create WallpaperHistoryResponse object for the notification
-            const wallpaperHistoryResponse = {
-              id: wallpaper.id,
-              fileName: wallpaper.fileName,
-              wallpaperType: wallpaper.wallpaperType,  // Renamed to wallpaperType
-              requesterId: wallpaper.requesterId,
-              recipientId: wallpaper.recipientId,
-              comment: wallpaper.comment,
-              reaction: null,  // Reaction is now removed
-              timeSent: wallpaper.timeSent
-            };
-
-            // Send FCM notification with the WallpaperHistoryResponse
+            // Send FCM notification for the reaction removal to the recipient
             const message = {
               data: {
                 type: "reaction_removed",  // Notification type
-                ...wallpaperHistoryResponse
+                wallpaperId: wallpaperId.toString(), // Include wallpaperId
+                requesterId: requesterId.toString(),    // Include requesterId
+                recipientId: recipientId.toString(),    // Include recipientId
+                //comment: "", // Reaction is removed, no comment
+                reaction: "none", // Reaction is now null
               },
               token: pushToken
             };
@@ -759,25 +1100,24 @@ app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
       return res.status(500).send('ERROR: Could not add comment.');
     }
 
-    // Fetch the complete wallpaper data for the notification
-    const getWallpaperQuery = `
-      SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
-      FROM SentWallpapers s
-      JOIN Wallpapers w ON s.wallpaperId = w.id
-      WHERE w.id = ?
+    // Fetch the wallpaper's requesterId and recipientId to determine who should receive the notification
+    const getRecipientQuery = `
+      SELECT requesterId, recipientId 
+      FROM SentWallpapers 
+      WHERE wallpaperId = ?
     `;
 
-    db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+    db.query(getRecipientQuery, [wallpaperId], (err, results) => {
       if (err) {
-        console.error('Error fetching wallpaper data for notification: ' + err.message);
+        console.error('Error fetching recipient for notification: ' + err.message);
         return res.status(500).send('ERROR: Could not notify recipient.');
       }
 
       if (results.length > 0) {
-        const wallpaper = results[0];
+        const { requesterId, recipientId } = results[0];
 
         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
-        const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+        const notifyUserId = (userId === requesterId) ? recipientId : requesterId;
 
         // Fetch the push token of the user who should be notified
         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
@@ -790,23 +1130,15 @@ app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
 
           const pushToken = tokenResults[0]?.pushToken;
           if (pushToken) {
-            // Create WallpaperHistoryResponse object for the notification
-            const wallpaperHistoryResponse = {
-              id: wallpaper.id,
-              fileName: wallpaper.fileName,
-              wallpaperType: wallpaper.wallpaperType, // Renamed to avoid conflict
-              requesterId: wallpaper.requesterId,
-              recipientId: wallpaper.recipientId,
-              comment: wallpaper.comment, // Updated with new comment
-              reaction: wallpaper.reaction, // Keep the reaction unchanged
-              timeSent: wallpaper.timeSent
-            };
-
-            // Send FCM notification with the WallpaperHistoryResponse
+            // Send FCM notification for the comment to the recipient
             const message = {
               data: {
-                type: "comment",
-                ...wallpaperHistoryResponse
+                type: "comment",  // Notification type
+                wallpaperId: wallpaperId.toString(), // Include wallpaperId
+                requesterId: requesterId.toString(),    // Include requesterId
+                recipientId: recipientId.toString(),    // Include recipientId
+                comment: comment, // Updated with new comment
+                //reaction: "wow", // Keep the reaction unchanged
               },
               token: pushToken
             };
@@ -828,6 +1160,185 @@ app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
     res.json({ success: true });
   });
 });
+
+
+
+// app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
+//   const { wallpaperId } = req.body;
+//   const userId = req.user.id; // This is the person performing the action (removing the reaction)
+
+//   const updateReactionQuery = `
+//     UPDATE SentWallpapers 
+//     SET reaction = NULL 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(updateReactionQuery, [wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not remove reaction.');
+//     }
+
+//     // Fetch the complete wallpaper data for the notification
+//     const getWallpaperQuery = `
+//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
+//       FROM SentWallpapers s
+//       JOIN Wallpapers w ON s.wallpaperId = w.id
+//       WHERE w.id = ?
+//     `;
+
+//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching wallpaper data for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const wallpaper = results[0];
+
+//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
+//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Create WallpaperHistoryResponse object for the notification
+//             const wallpaperHistoryResponse = {
+//               id: wallpaper.id,
+//               fileName: wallpaper.fileName,
+//               wallpaperType: wallpaper.wallpaperType,  // Renamed to wallpaperType
+//               requesterId: wallpaper.requesterId,
+//               recipientId: wallpaper.recipientId,
+//               comment: wallpaper.comment,
+//               reaction: null,  // Reaction is now removed
+//               timeSent: wallpaper.timeSent
+//             };
+
+//             // Send FCM notification with the WallpaperHistoryResponse
+//             const message = {
+//               data: {
+//                 type: "reaction_removed",  // Notification type
+//                 ...wallpaperHistoryResponse
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Reaction removal notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending reaction removal notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// });
+
+
+
+
+// app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
+//   const { wallpaperId, comment } = req.body;
+//   const userId = req.user.id; // The user who is adding the comment
+
+//   const updateCommentQuery = `
+//     UPDATE SentWallpapers 
+//     SET comment = ? 
+//     WHERE wallpaperId = ? 
+//     AND (requesterId = ? OR recipientId = ?)
+//   `;
+
+//   db.query(updateCommentQuery, [comment, wallpaperId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not add comment.');
+//     }
+
+//     // Fetch the complete wallpaper data for the notification
+//     const getWallpaperQuery = `
+//       SELECT w.id, w.fileName, w.type AS wallpaperType, s.comment, s.reaction, s.timeSent, s.requesterId, s.recipientId
+//       FROM SentWallpapers s
+//       JOIN Wallpapers w ON s.wallpaperId = w.id
+//       WHERE w.id = ?
+//     `;
+
+//     db.query(getWallpaperQuery, [wallpaperId], (err, results) => {
+//       if (err) {
+//         console.error('Error fetching wallpaper data for notification: ' + err.message);
+//         return res.status(500).send('ERROR: Could not notify recipient.');
+//       }
+
+//       if (results.length > 0) {
+//         const wallpaper = results[0];
+
+//         // Determine who should receive the notification: if userId is the requester, notify the recipient and vice versa
+//         const notifyUserId = (userId === wallpaper.requesterId) ? wallpaper.recipientId : wallpaper.requesterId;
+
+//         // Fetch the push token of the user who should be notified
+//         const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+//         db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+//           if (err) {
+//             console.error('Error fetching push token: ' + err.message);
+//             return res.status(500).send('ERROR: Could not notify recipient.');
+//           }
+
+//           const pushToken = tokenResults[0]?.pushToken;
+//           if (pushToken) {
+//             // Create WallpaperHistoryResponse object for the notification
+//             const wallpaperHistoryResponse = {
+//               id: wallpaper.id,
+//               fileName: wallpaper.fileName,
+//               wallpaperType: wallpaper.wallpaperType, // Renamed to avoid conflict
+//               requesterId: wallpaper.requesterId,
+//               recipientId: wallpaper.recipientId,
+//               comment: wallpaper.comment, // Updated with new comment
+//               reaction: wallpaper.reaction, // Keep the reaction unchanged
+//               timeSent: wallpaper.timeSent
+//             };
+
+//             // Send FCM notification with the WallpaperHistoryResponse
+//             const message = {
+//               data: {
+//                 type: "comment",
+//                 ...wallpaperHistoryResponse
+//               },
+//               token: pushToken
+//             };
+
+//             admin.messaging().send(message)
+//               .then(response => {
+//                 console.log('Comment notification sent successfully:', response);
+//               })
+//               .catch(error => {
+//                 console.error('Error sending comment notification:', error);
+//               });
+//           }
+//         });
+//       } else {
+//         return res.status(404).send('ERROR: Wallpaper not found.');
+//       }
+//     });
+
+//     res.json({ success: true });
+//   });
+// });
 
 app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
   const { friendshipId, lastMessageId } = req.body;
