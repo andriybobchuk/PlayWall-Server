@@ -64,7 +64,8 @@ router.post('/createUser', verifyToken, (req, res) => {
 router.get('/getUserData', verifyToken, (req, res) => {
   const { uid } = req.user;
 
-  const query = 'SELECT id, nick, email, avatarId FROM Users WHERE firebaseId = ?';
+  // Updated query to also select screenRatio
+  const query = 'SELECT id, nick, email, avatarId, screenRatio FROM Users WHERE firebaseId = ?';
   db.query(query, [uid], (err, results) => {
     if (err) {
       console.error('Database query error: ' + err.message);
@@ -75,16 +76,19 @@ router.get('/getUserData', verifyToken, (req, res) => {
       return res.status(404).send('ERROR: User not found.');
     }
 
+    // Include screenRatio in the response
     const userDataResponse = {
       id: results[0].id,
       name: results[0].nick || "",  // Provide default value if null
       email: results[0].email,
-      avatarId: results[0].avatarId || ""  // Provide default value if null
+      avatarId: results[0].avatarId || "",  // Provide default value if null
+      screenRatio: results[0].screenRatio || null  // Provide null if screenRatio is missing
     };
 
     res.status(200).json(userDataResponse);
   });
 });
+
 
 // Update user avatar and nick
 router.post('/updateProfile', verifyToken, (req, res) => {
@@ -150,23 +154,29 @@ router.post('/updatePushToken', verifyToken, (req, res) => {
 });
 
 
-// router.post('/updatePushToken', verifyToken, (req, res) => {
-//   const { pushToken } = req.body
-//   const { uid } = req.user
-//   const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?'
+// // In routes/user.js
+// router.get('/getFriendScreenRatio', verifyToken, (req, res) => {
+//   const { friendId } = req.query;  // Expect friendId in the query parameters
 
-//   // console.log(req)
+//   if (!friendId) {
+//     return res.status(400).send({ error: 'Missing required field: friendId.' });
+//   }
 
-//   db.query(query, [pushToken, uid], (err, results) => {
+//   const query = 'SELECT screenRatio FROM Users WHERE id = ?';
+
+//   db.query(query, [friendId], (err, results) => {
 //     if (err) {
-//       console.error('Token update error: ' + err.message)
-//       return res.status(500).send('Token not updated.')
+//       return res.status(500).send({ error: 'Failed to fetch screenRatio from the database.', details: err.message });
 //     }
-//     if (results.affectedRows === 0) {
-//       return res.status(404).send('User not found.')
+
+//     if (results.length === 0) {
+//       return res.status(404).send({ error: 'Friend not found.' });
 //     }
-//     res.status(200).send('Push token updated.')
-//   })
-// })
+
+//     res.status(200).send({ screenRatio: results[0].screenRatio });
+//   });
+// });
+
+
 
 module.exports = router

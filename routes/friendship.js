@@ -125,6 +125,56 @@ function sendFriendRequestNotification(pushToken, requesterName) {
       console.error('Error sending notification: ' + error.message);
     });
 }
+
+
+// router.get('/', verifyToken, (req, res) => {
+//   const userId = req.user.id;
+
+//   const getFriendsQuery = `
+//     SELECT 
+//       f.friendship_id AS friendshipId, 
+//       f.requester_id AS requesterId, 
+//       f.status, 
+//       u.id, 
+//       u.email, 
+//       u.nick, 
+//       u.avatarId,
+//       w.dateCreated AS lastMessageDate, 
+//       s.status AS lastMessageStatus, 
+//       s.requesterId AS lastMessageSender 
+//     FROM Users u
+//     JOIN Friendships f 
+//     ON (u.id = f.requester_id OR u.id = f.addressee_id)
+//     LEFT JOIN SentWallpapers s ON f.last_wallpaper_id = s.wallpaperId
+//     LEFT JOIN Wallpapers w ON s.wallpaperId = w.id
+//     WHERE (f.requester_id = ? OR f.addressee_id = ?)
+//     AND (f.status = 'accepted' OR (f.status = 'blocked' AND f.requester_id = u.id))
+//     AND u.id <> ?
+//     ORDER BY w.dateCreated DESC
+//   `;
+
+//   db.query(getFriendsQuery, [userId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database query error: ' + err.message);
+//       return res.status(500).send('ERROR: Unable to retrieve friends.');
+//     }
+
+//     const friends = results.map((row) => ({
+//       friendshipId: row.friendshipId,
+//       id: row.id,
+//       email: row.email,
+//       nick: row.nick,
+//       avatarId: row.avatarId || "", // Provide an empty string if avatarId is null
+//       status: row.status,
+//       requesterId: row.requesterId,
+//       lastMessageDate: row.lastMessageDate || null,     // Last message date
+//       lastMessageStatus: row.lastMessageStatus || null, // Last message status (from SentWallpapers)
+//       lastMessageSender: row.lastMessageSender || null  // Last message sender
+//     }));
+
+//     res.status(200).json(friends);
+//   });
+// });
 router.get('/', verifyToken, (req, res) => {
   const userId = req.user.id;
 
@@ -137,6 +187,7 @@ router.get('/', verifyToken, (req, res) => {
       u.email, 
       u.nick, 
       u.avatarId,
+      u.screenRatio,  -- Select the screenRatio field
       w.dateCreated AS lastMessageDate, 
       s.status AS lastMessageStatus, 
       s.requesterId AS lastMessageSender 
@@ -163,6 +214,7 @@ router.get('/', verifyToken, (req, res) => {
       email: row.email,
       nick: row.nick,
       avatarId: row.avatarId || "", // Provide an empty string if avatarId is null
+      screenRatio: row.screenRatio || null, // Add screenRatio from the database
       status: row.status,
       requesterId: row.requesterId,
       lastMessageDate: row.lastMessageDate || null,     // Last message date
@@ -523,121 +575,6 @@ router.post('/unblock', verifyToken, (req, res) => {
 });
 
 
-
-// // Unblock user by friendship_id
-// router.post('/unblock', verifyToken, (req, res) => {
-//   const { friendshipId, userIdToUnblock } = req.body; // person to be unblocked
-//   const userId = req.user.id; // current user initiating unblock
-
-//   // Fetch the friendship details
-//   const getFriendshipQuery = `
-//     SELECT requester_id, addressee_id, status FROM Friendships WHERE friendship_id = ?
-//   `;
-
-//   db.query(getFriendshipQuery, [friendshipId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch friendship.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     const { requester_id, addressee_id, status } = results[0];
-
-//     // Check if the current user is allowed to unblock
-//     if (userIdToUnblock === requester_id && status === 'blocked') {
-//       // Proceed to unblock the friendship (only requester can unblock)
-//       const unblockQuery = `
-//         UPDATE Friendships
-//         SET status = 'accepted'
-//         WHERE friendship_id = ? AND status = 'blocked'
-//       `;
-
-//       db.query(unblockQuery, [friendshipId], (err, results) => {
-//         if (err) {
-//           console.error('Database update error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not unblock user.');
-//         }
-
-//         res.json({ success: true, message: 'User unblocked successfully.' });
-//       });
-//     } else {
-//       return res.status(403).send('ERROR: Not permitted to unblock.');
-//     }
-//   });
-// });
-
-
-// router.post('/api/removeFriend', verifyToken, (req, res) => {
-//   const userId = req.user.id;
-//   const { friendId } = req.body;
-
-//   const removeFriendQuery = `
-//     DELETE FROM Friendships
-//     WHERE (requester_id = ? AND addressee_id = ?) 
-//     OR (requester_id = ? AND addressee_id = ?)
-//   `;
-
-//   db.query(removeFriendQuery, [userId, friendId, friendId, userId], (err, result) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not remove friend.');
-//     }
-
-//     res.json({ success: true, message: 'Friendship removed successfully.' });
-//   });
-// });
-
-// router.post('/api/friends/block', verifyToken, (req, res) => {
-//   const { friendId } = req.body; // The friend to be blocked
-//   const userId = req.user.id; // The current user (from token)
-
-//   const blockQuery = `
-//     UPDATE Friendships
-//     SET status = 'blocked'
-//     WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)
-//   `;
-
-//   db.query(blockQuery, [userId, friendId, friendId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not block user.');
-//     }
-
-//     if (results.affectedRows === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     res.json({ success: true, message: 'User blocked successfully.' });
-//   });
-// });
-
-// router.post('/api/friends/unblock', verifyToken, (req, res) => {
-//   const { friendId } = req.body; // The friend to be unblocked
-//   const userId = req.user.id; // The current user (from token)
-
-//   const unblockQuery = `
-//   UPDATE Friendships
-//   SET status = 'accepted'
-//   WHERE ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))
-//   AND status = 'blocked'
-// `;
-
-//   db.query(unblockQuery, [userId, friendId, friendId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database update error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not unblock user.');
-//     }
-
-//     if (results.affectedRows === 0) {
-//       return res.status(404).send('ERROR: Friendship not found or user not blocked.');
-//     }
-
-//     res.json({ success: true, message: 'User unblocked successfully.' });
-//   });
-// });
 
 
 
