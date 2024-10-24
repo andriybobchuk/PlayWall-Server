@@ -95,31 +95,55 @@ app.post('/api/changeWallpaper', verifyToken, (req, res) => {
                 token: pushToken,
               };
 
-              admin.messaging().send(message)
-                .then((result) => {
-                  // Create the response object with the new structure
-                  const responseData = {
-                    fileName: fileName,
-                    recipientId: recipientId,
-                    comment: comment,
-                    reaction: reaction,
-                    type: type,
-                    id: wallpaperId, // Add the wallpaper ID
-                    timestamp: new Date().toISOString(), // Add the current timestamp
-                    status: 'unread', // Default status, can be modified as needed
-                    senderId: requesterId // Add the sender ID
-                  };
+              sendNotification(message)
+            .then((result) => {
+              const responseData = {
+                fileName: fileName,
+                recipientId: recipientId,
+                comment: comment,
+                reaction: reaction,
+                type: type,
+                id: wallpaperId, // Add the wallpaper ID
+                timestamp: new Date().toISOString(), // Add the current timestamp
+                status: 'unread', // Default status, can be modified as needed
+                senderId: requesterId // Add the sender ID
+              };
+              res.json({
+                success: true,
+                data: responseData,
+                message: 'Wallpaper sent successfully.'
+              });
+            })
+            .catch(err => {
+              console.error('Failed to send notification:', err);
+              res.status(500).send('Failed to send notification.');
+            });
 
-                  // Send the response with the required data structure
-                  res.json({
-                    success: true,
-                    data: responseData,
-                    message: 'Wallpaper sent successfully.'
-                  });
-                })
-                .catch((error) => {
-                  return res.status(500).json({ errorCode: 'ERR_NOTIFICATION_SEND', message: 'Error sending notification.', detail: error });
-                });
+              // admin.messaging().send(message)
+              //   .then((result) => {
+              //     // Create the response object with the new structure
+              //     const responseData = {
+              //       fileName: fileName,
+              //       recipientId: recipientId,
+              //       comment: comment,
+              //       reaction: reaction,
+              //       type: type,
+              //       id: wallpaperId, // Add the wallpaper ID
+              //       timestamp: new Date().toISOString(), // Add the current timestamp
+              //       status: 'unread', // Default status, can be modified as needed
+              //       senderId: requesterId // Add the sender ID
+              //     };
+
+              //     // Send the response with the required data structure
+              //     res.json({
+              //       success: true,
+              //       data: responseData,
+              //       message: 'Wallpaper sent successfully.'
+              //     });
+              //   })
+              //   .catch((error) => {
+              //     return res.status(500).json({ errorCode: 'ERR_NOTIFICATION_SEND', message: 'Error sending notification.', detail: error });
+              //   });
             } else {
               res.status(404).json({ errorCode: 'ERR_USER_NOT_FOUND', message: `User with id ${recipientId} not found.` });
             }
@@ -301,11 +325,12 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
             //sendFriendRequestNotification(pushToken, requesterId, recipientId, recipientId);
 
             const message = {
-              data: {
-                type: "friend_invite",
-                // requesterId: requesterId.toString(),
-                // recipientId: addresseeId.toString(),
-                // friendshipId: friendshipId ? friendshipId.toString() : null, // Pass friendshipId if available
+                            data: {
+                type: "reaction",
+                wallpaperId: wallpaperId.toString(),  // Include wallpaperId
+                requesterId: requesterId.toString(),    // Include requesterId
+                recipientId: recipientId.toString(),    // Include recipientId
+                reaction: reaction.toString(),
               },
               token: pushToken,
             };
@@ -406,13 +431,22 @@ app.post('/api/wallpaper/removeReaction', verifyToken, (req, res) => {
               token: pushToken
             };
 
-            admin.messaging().send(message)
-              .then(response => {
-                console.log('Reaction removal notification sent successfully:', response);
-              })
-              .catch(error => {
-                console.error('Error sending reaction removal notification:', error);
-              });
+            sendNotification(message)
+            .then(() => {
+              res.status(200).send('Message sent.');
+            })
+            .catch(err => {
+              console.error('Failed to send notification:', err);
+              res.status(500).send('Failed to send notification.');
+            });
+
+            // admin.messaging().send(message)
+            //   .then(response => {
+            //     console.log('Reaction removal notification sent successfully:', response);
+            //   })
+            //   .catch(error => {
+            //     console.error('Error sending reaction removal notification:', error);
+            //   });
           }
         });
       } else {
@@ -481,19 +515,28 @@ app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
                 wallpaperId: wallpaperId.toString(), // Include wallpaperId
                 requesterId: requesterId.toString(),    // Include requesterId
                 recipientId: recipientId.toString(),    // Include recipientId
-                comment: comment, // Updated with new comment
+                comment: comment? comment.toString() : "", // Updated with new comment
                 //reaction: "wow", // Keep the reaction unchanged
               },
               token: pushToken
             };
 
-            admin.messaging().send(message)
-              .then(response => {
-                console.log('Comment notification sent successfully:', response);
-              })
-              .catch(error => {
-                console.error('Error sending comment notification:', error);
-              });
+            sendNotification(message)
+            .then(() => {
+              res.status(200).send('Message sent.');
+            })
+            .catch(err => {
+              console.error('Failed to send notification:', err);
+              res.status(500).send('Failed to send notification.');
+            });
+
+            // admin.messaging().send(message)
+            //   .then(response => {
+            //     console.log('Comment notification sent successfully:', response);
+            //   })
+            //   .catch(error => {
+            //     console.error('Error sending comment notification:', error);
+            //   });
           }
         });
       } else {
@@ -577,18 +620,26 @@ app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
   const page = parseInt(req.query.page) || 0; // Default to page 0
   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
   const offset = page * pageSize; // Offset for pagination
-
+//\`order\` ASC,
   // Adjusted query to fetch both 'New' and 'Popular' wallpapers, sorted by 'order'
   const wallpapersQuery = `
-    SELECT * FROM Wallpapers
-    WHERE type IN ('New', 'Popular')
-    ORDER BY \`order\` ASC,
-             CASE 
-               WHEN type = 'New' THEN dateCreated 
-               WHEN type = 'Popular' THEN savedCount 
-             END DESC
-    LIMIT ? OFFSET ?
-  `;
+SELECT * FROM Wallpapers
+WHERE type IN ('New', 'Popular')
+ORDER BY 
+    \`order\` ASC,
+    CASE 
+        WHEN type = 'New' THEN dateCreated 
+        WHEN type = 'Popular' THEN savedCount 
+    END DESC,
+    id ASC -- Assuming 'id' is the unique identifier for the wallpapers
+LIMIT ? OFFSET ?
+   `;
+  // ORDER BY 
+  //            CASE 
+  //              WHEN type = 'New' THEN dateCreated 
+  //              WHEN type = 'Popular' THEN savedCount 
+  //            END DESC
+  //LIMIT ? OFFSET ?
 
   db.query(wallpapersQuery, [pageSize, offset], (err, wallpapers) => {
     if (err) {

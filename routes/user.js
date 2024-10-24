@@ -25,40 +25,7 @@ router.post('/createUser', verifyToken, (req, res) => {
   });
 });
 
-// // router.post('/createUser', verifyToken, (req, res) => {
-//   const { pushToken, firebaseId, email } = req.body;
-//   const { uid } = req.user; // firebaseID extrated from auth token
 
-//   if (!email || !uid || !pushToken || !firebaseId) {
-//     console.error('Missing required fields: email, uid, or pushToken.');
-//     return res.status(400).send('ERROR: Missing required fields.');
-//   }
-
-//   // Database query to insert user
-//   const query = 'INSERT INTO Users (email, firebaseId, pushToken) VALUES (?, ?, ?)';
-
-//   db.query(query, [email, uid, pushToken], (err, results) => {
-//     if (err) {
-//       // Log detailed error message
-//       console.error(`Database insert error for user (${email}): ${err.message}`);
-
-//       // Check if the error is due to a duplicate entry
-//       if (err.code === 'ER_DUP_ENTRY') {
-//         console.error(`User with email ${email} already exists.`);
-//         return res.status(409).send('ERROR: User already exists.');
-//       }
-
-//       // Send generic 500 error for other issues
-//       return res.status(500).send('ERROR: User not added to database.');
-//     }
-
-//     // Log success message
-//     console.log(`User with email ${email} added to the database successfully.`);
-
-//     // Respond with success
-//     res.status(200).send('User added to database.');
-//   });
-// });
 
 // Fetch user data by firebaseId
 router.get('/getUserData', verifyToken, (req, res) => {
@@ -90,6 +57,68 @@ router.get('/getUserData', verifyToken, (req, res) => {
 });
 
 
+// // Update user avatar and nick
+// router.post('/updateProfile', verifyToken, (req, res) => {
+//   const { avatarId, nick } = req.body;
+//   const { uid } = req.user;
+
+//   // Build the query dynamically based on provided fields
+//   let query = 'UPDATE Users SET ';
+//   const params = [];
+
+//   if (avatarId) {
+//     query += 'avatarId = ? ';
+//     params.push(avatarId);
+//   }
+
+//   if (nick) {
+//     if (params.length > 0) query += ', '; // Add a comma if avatarUrl is also being updated
+//     query += 'nick = ? ';
+//     params.push(nick);
+//   }
+
+//   query += 'WHERE firebaseId = ?';
+//   params.push(uid);
+
+//   // If neither field is provided, return an error
+//   if (params.length === 1) {
+//     return res.status(400).send('ERROR: No fields to update.');
+//   }
+
+//   db.query(query, params, (err, results) => {
+//     if (err) {
+//       console.error('Database update error: ' + err.message);
+//       return res.status(500).send('ERROR: Unable to update profile.');
+//     }
+
+//     if (results.affectedRows === 0) {
+//       return res.status(404).send('ERROR: User not found.');
+//     }
+
+//     res.status(200).send('Profile updated successfully.');
+//   });
+// });
+
+// router.post('/updatePushToken', verifyToken, (req, res) => {
+//   const { pushToken } = req.body;
+//   const { uid } = req.user;
+
+//   if (!pushToken) {
+//     return res.status(400).send({ error: 'Missing push token.' });
+//   }
+
+//   const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?';
+
+//   db.query(query, [pushToken, uid], (err, results) => {
+//     if (err) {
+//       return res.status(500).send({ error: 'Failed to update push token.', details: err.message });
+//     }
+//     if (results.affectedRows === 0) {
+//       return res.status(404).send({ error: 'User not found.' });
+//     }
+//     res.status(200).send({ success: true });
+//   });
+// });
 // Update user avatar and nick
 router.post('/updateProfile', verifyToken, (req, res) => {
   const { avatarId, nick } = req.body;
@@ -99,13 +128,15 @@ router.post('/updateProfile', verifyToken, (req, res) => {
   let query = 'UPDATE Users SET ';
   const params = [];
 
-  if (avatarId) {
+  if (avatarId === '') {
+    query += 'avatarId = NULL ';
+  } else if (avatarId !== null && avatarId !== undefined) {
     query += 'avatarId = ? ';
     params.push(avatarId);
   }
 
   if (nick) {
-    if (params.length > 0) query += ', '; // Add a comma if avatarUrl is also being updated
+    if (params.length > 0 || avatarId === '') query += ', '; // Add a comma if needed
     query += 'nick = ? ';
     params.push(nick);
   }
@@ -113,8 +144,8 @@ router.post('/updateProfile', verifyToken, (req, res) => {
   query += 'WHERE firebaseId = ?';
   params.push(uid);
 
-  // If neither field is provided, return an error
-  if (params.length === 1) {
+  // If no fields to update, return an error
+  if (params.length === 1 && avatarId !== '') {
     return res.status(400).send('ERROR: No fields to update.');
   }
 
@@ -131,52 +162,6 @@ router.post('/updateProfile', verifyToken, (req, res) => {
     res.status(200).send('Profile updated successfully.');
   });
 });
-
-router.post('/updatePushToken', verifyToken, (req, res) => {
-  const { pushToken } = req.body;
-  const { uid } = req.user;
-
-  if (!pushToken) {
-    return res.status(400).send({ error: 'Missing push token.' });
-  }
-
-  const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?';
-
-  db.query(query, [pushToken, uid], (err, results) => {
-    if (err) {
-      return res.status(500).send({ error: 'Failed to update push token.', details: err.message });
-    }
-    if (results.affectedRows === 0) {
-      return res.status(404).send({ error: 'User not found.' });
-    }
-    res.status(200).send({ success: true });
-  });
-});
-
-
-// // In routes/user.js
-// router.get('/getFriendScreenRatio', verifyToken, (req, res) => {
-//   const { friendId } = req.query;  // Expect friendId in the query parameters
-
-//   if (!friendId) {
-//     return res.status(400).send({ error: 'Missing required field: friendId.' });
-//   }
-
-//   const query = 'SELECT screenRatio FROM Users WHERE id = ?';
-
-//   db.query(query, [friendId], (err, results) => {
-//     if (err) {
-//       return res.status(500).send({ error: 'Failed to fetch screenRatio from the database.', details: err.message });
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send({ error: 'Friend not found.' });
-//     }
-
-//     res.status(200).send({ screenRatio: results[0].screenRatio });
-//   });
-// });
-
 
 
 module.exports = router
