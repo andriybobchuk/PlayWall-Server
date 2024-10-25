@@ -99,26 +99,26 @@ router.get('/getUserData', verifyToken, (req, res) => {
 //   });
 // });
 
-// router.post('/updatePushToken', verifyToken, (req, res) => {
-//   const { pushToken } = req.body;
-//   const { uid } = req.user;
+router.post('/updatePushToken', verifyToken, (req, res) => {
+  const { pushToken } = req.body;
+  const { uid } = req.user;
 
-//   if (!pushToken) {
-//     return res.status(400).send({ error: 'Missing push token.' });
-//   }
+  if (!pushToken) {
+    return res.status(400).send({ error: 'Missing push token.' });
+  }
 
-//   const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?';
+  const query = 'UPDATE Users SET pushToken = ? WHERE firebaseId = ?';
 
-//   db.query(query, [pushToken, uid], (err, results) => {
-//     if (err) {
-//       return res.status(500).send({ error: 'Failed to update push token.', details: err.message });
-//     }
-//     if (results.affectedRows === 0) {
-//       return res.status(404).send({ error: 'User not found.' });
-//     }
-//     res.status(200).send({ success: true });
-//   });
-// });
+  db.query(query, [pushToken, uid], (err, results) => {
+    if (err) {
+      return res.status(500).send({ error: 'Failed to update push token.', details: err.message });
+    }
+    if (results.affectedRows === 0) {
+      return res.status(404).send({ error: 'User not found.' });
+    }
+    res.status(200).send({ success: true });
+  });
+});
 // Update user avatar and nick
 router.post('/updateProfile', verifyToken, (req, res) => {
   const { avatarId, nick } = req.body;

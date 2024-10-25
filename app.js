@@ -310,19 +310,6 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
 
           const pushToken = tokenResults[0]?.pushToken;
           if (pushToken) {
-            // Send FCM notification for the reaction to the recipient
-            // const message = {
-            //   data: {
-            //     type: "reaction",
-            //     wallpaperId: wallpaperId.toString(),  // Include wallpaperId
-            //     requesterId: requesterId.toString(),    // Include requesterId
-            //     recipientId: recipientId.toString(),    // Include recipientId
-            //     reaction: reaction,
-            //   },
-            //   token: pushToken
-            // };
-
-            //sendFriendRequestNotification(pushToken, requesterId, recipientId, recipientId);
 
             const message = {
                             data: {
@@ -343,22 +330,7 @@ app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
               console.error('Failed to send notification:', err);
               res.status(500).send('Failed to send notification.');
             });
-          
-            // admin.messaging().send(message)
-            //   .then(response => {
-            //     console.log('Friend request notification sent successfully:', response);
-            //   })
-            //   .catch(error => {
-            //     console.error('Error sending friend request notification:', error);
-            //   });
-
-            // admin.messaging().send(message)
-            //   .then(response => {
-            //     console.log('Reaction notification sent successfully:', response);
-            //   })
-            //   .catch(error => {
-            //     console.error('Error sending reaction notification:', error);
-            //   });
+      
           }
         });
       } else {
@@ -550,7 +522,6 @@ app.post('/api/wallpaper/addComment', verifyToken, (req, res) => {
 
 
 
-
 app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
   const { friendshipId, lastMessageId } = req.body;
   const userId = req.user.id;
@@ -586,10 +557,112 @@ app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
         return res.status(500).send('ERROR: Unable to mark messages as read.');
       }
 
-      res.json({ success: true });
+      // Fetch the wallpaper's requesterId and recipientId to send notification
+      const getRecipientQuery = `
+        SELECT requesterId, recipientId 
+        FROM SentWallpapers 
+        WHERE wallpaperId = ?
+      `;
+
+      db.query(getRecipientQuery, [lastMessageId], (err, results) => {
+        if (err) {
+          console.error('Error fetching recipient for notification: ' + err.message);
+          return res.status(500).send('ERROR: Could not notify sender.');
+        }
+
+        if (results.length > 0) {
+          const { requesterId, recipientId } = results[0];
+
+          // Determine who should receive the notification: If userId is the recipient, notify the requester
+          const notifyUserId = (userId === recipientId) ? requesterId : null;
+
+          if (!notifyUserId) {
+            return res.status(200).send({ success: true });
+          }
+
+          // Fetch the push token of the requester (sender)
+          const getPushTokenQuery = `SELECT pushToken FROM Users WHERE id = ?`;
+
+          db.query(getPushTokenQuery, [notifyUserId], (err, tokenResults) => {
+            if (err) {
+              console.error('Error fetching push token: ' + err.message);
+              return res.status(500).send('ERROR: Could not notify sender.');
+            }
+
+            const pushToken = tokenResults[0]?.pushToken;
+            if (pushToken) {
+              // Prepare the notification message
+              const message = {
+                data: {
+                  type: "message_read",
+                  wallpaperId: lastMessageId.toString(),  // Include wallpaperId
+                  requesterId: requesterId.toString(),    // Include requesterId
+                  recipientId: recipientId.toString()     // Include recipientId
+                },
+                token: pushToken,
+              };
+
+              // Send the notification
+              sendNotification(message)
+                .then(() => {
+                  res.json({ success: true });
+                })
+                .catch(err => {
+                  console.error('Failed to send notification:', err);
+                  res.status(500).send('Failed to send notification.');
+                });
+            } else {
+              res.status(404).send('ERROR: Sender not found for notification.');
+            }
+          });
+        } else {
+          return res.status(404).send('ERROR: Wallpaper not found.');
+        }
+      });
     });
   });
 });
+
+
+// app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
+//   const { friendshipId, lastMessageId } = req.body;
+//   const userId = req.user.id;
+
+//   // Ensure the user is part of the friendship
+//   const checkFriendshipQuery = `
+//     SELECT friendship_id 
+//     FROM Friendships 
+//     WHERE friendship_id = ? 
+//     AND (requester_id = ? OR addressee_id = ?)
+//   `;
+
+//   db.query(checkFriendshipQuery, [friendshipId, userId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database query error: ' + err.message);
+//       return res.status(500).send('ERROR: Unable to verify friendship.');
+//     }
+
+//     if (results.length === 0) {
+//       return res.status(404).send('ERROR: Friendship not found.');
+//     }
+
+//     // Update the message status to 'read' in SentWallpapers table
+//     const updateMessageStatusQuery = `
+//       UPDATE SentWallpapers 
+//       SET status = 'read' 
+//       WHERE wallpaperId = ? AND status = 'unread'
+//     `;
+
+//     db.query(updateMessageStatusQuery, [lastMessageId], (err, results) => {
+//       if (err) {
+//         console.error('Database update error: ' + err.message);
+//         return res.status(500).send('ERROR: Unable to mark messages as read.');
+//       }
+
+//       res.json({ success: true });
+//     });
+//   });
+// });
 
 
 
@@ -611,66 +684,106 @@ app.post('/api/wallpaper/report', verifyToken, (req, res) => {
   })
 })
 
-// app.use('/api/user', userRouter)
-// app.use('/api/friendship', friendshipRouter)
-
-
-
 app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
   const page = parseInt(req.query.page) || 0; // Default to page 0
   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
   const offset = page * pageSize; // Offset for pagination
-//\`order\` ASC,
-  // Adjusted query to fetch both 'New' and 'Popular' wallpapers, sorted by 'order'
-  const wallpapersQuery = `
-SELECT * FROM Wallpapers
-WHERE type IN ('New', 'Popular')
-ORDER BY 
-    \`order\` ASC,
-    CASE 
-        WHEN type = 'New' THEN dateCreated 
-        WHEN type = 'Popular' THEN savedCount 
-    END DESC,
-    id ASC -- Assuming 'id' is the unique identifier for the wallpapers
-LIMIT ? OFFSET ?
-   `;
-  // ORDER BY 
-  //            CASE 
-  //              WHEN type = 'New' THEN dateCreated 
-  //              WHEN type = 'Popular' THEN savedCount 
-  //            END DESC
-  //LIMIT ? OFFSET ?
 
-  db.query(wallpapersQuery, [pageSize, offset], (err, wallpapers) => {
+  const newWallpapersQuery = `
+    SELECT * FROM Wallpapers
+    WHERE type = 'New'
+    ORDER BY \`order\` ASC, dateCreated DESC, id ASC
+    LIMIT ? OFFSET ? 
+  `;
+
+  const popularWallpapersQuery = `
+    SELECT * FROM Wallpapers
+    WHERE type = 'Popular'
+    ORDER BY \`order\` ASC, savedCount DESC, id ASC
+    LIMIT ? OFFSET ?
+  `;
+
+  db.query(newWallpapersQuery, [pageSize, offset], (err, newWallpapers) => {
     if (err) {
-      console.error('Database query error: ' + err.message);
-      return res.status(500).send('ERROR: Could not fetch wallpapers.');
+      console.error('Database query error (New Wallpapers): ' + err.message);
+      return res.status(500).send('ERROR: Could not fetch New wallpapers.');
     }
 
-    // Split the results into 'New' and 'Popular' groups
-    const newWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'New');
-    const popularWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'Popular');
-
-    const combinedResults = [];
-    const newGroupSize = 3;  // Number of new wallpapers in each group
-    const popularGroupSize = 3;  // Number of popular wallpapers in each group
-
-    const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
-    
-    for (let i = 0; i < maxIterations; i += newGroupSize) {
-      // Push 3 new wallpapers first
-      for (let j = 0; j < newGroupSize; j++) {
-        if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
+    db.query(popularWallpapersQuery, [pageSize, offset], (err, popularWallpapers) => {
+      if (err) {
+        console.error('Database query error (Popular Wallpapers): ' + err.message);
+        return res.status(500).send('ERROR: Could not fetch Popular wallpapers.');
       }
-      // Then push 3 popular wallpapers
-      for (let j = 0; j < popularGroupSize; j++) {
-        if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
-      }
-    }
 
-    res.json(combinedResults);
+      const combinedResults = [];
+      const newGroupSize = 3;  // Number of new wallpapers in each group
+      const popularGroupSize = 3;  // Number of popular wallpapers in each group
+      const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
+
+      for (let i = 0; i < maxIterations; i += newGroupSize) {
+        for (let j = 0; j < newGroupSize; j++) {
+          if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
+        }
+        for (let j = 0; j < popularGroupSize; j++) {
+          if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
+        }
+      }
+
+      res.json(combinedResults);
+    });
   });
 });
+
+
+// app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
+//   const page = parseInt(req.query.page) || 0; // Default to page 0
+//   const pageSize = parseInt(req.query.pageSize) || 6; // Default to page size 6
+//   const offset = page * pageSize; // Offset for pagination
+
+//   // Adjusted query to fetch both 'New' and 'Popular' wallpapers, sorted by 'order'
+//   const wallpapersQuery = `
+// SELECT * FROM Wallpapers
+// WHERE type IN ('New', 'Popular')
+// ORDER BY 
+//     \`order\` ASC,
+//     CASE 
+//         WHEN type = 'New' THEN dateCreated 
+//         WHEN type = 'Popular' THEN savedCount 
+//     END DESC,
+//     id ASC -- Assuming 'id' is the unique identifier for the wallpapers
+// LIMIT ? OFFSET ?
+//    `;
+
+//   db.query(wallpapersQuery, [pageSize, offset], (err, wallpapers) => {
+//     if (err) {
+//       console.error('Database query error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not fetch wallpapers.');
+//     }
+
+//     // Split the results into 'New' and 'Popular' groups
+//     const newWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'New');
+//     const popularWallpapers = wallpapers.filter(wallpaper => wallpaper.type === 'Popular');
+
+//     const combinedResults = [];
+//     const newGroupSize = 3;  // Number of new wallpapers in each group
+//     const popularGroupSize = 3;  // Number of popular wallpapers in each group
+
+//     const maxIterations = Math.max(newWallpapers.length, popularWallpapers.length);
+    
+//     for (let i = 0; i < maxIterations; i += newGroupSize) {
+//       // Push 3 new wallpapers first
+//       for (let j = 0; j < newGroupSize; j++) {
+//         if (newWallpapers[i + j]) combinedResults.push(newWallpapers[i + j]);
+//       }
+//       // Then push 3 popular wallpapers
+//       for (let j = 0; j < popularGroupSize; j++) {
+//         if (popularWallpapers[i + j]) combinedResults.push(popularWallpapers[i + j]);
+//       }
+//     }
+
+//     res.json(combinedResults);
+//   });
+// });
 
 
 
