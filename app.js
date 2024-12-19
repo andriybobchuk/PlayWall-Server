@@ -1,23 +1,13 @@
-// const express = require('express')
-// const admin = require('firebase-admin')
-// const verifyToken = require('./middlewares/auth')
-// const friendshipRouter = require('./routes/friendship')
-// const userRouter = require('./routes/user')
-// const db = require('./utils/db')
-
-// admin.initializeApp({
-//   credential: admin.credential.cert('playwall-a1a0f-firebase-adminsdk-gy6bf-499122748c.json'),
-// })
-
-// const app = express()
-// app.use(express.json())
-
 const express = require('express');
 const verifyToken = require('./middlewares/auth');
 const friendshipRouter = require('./routes/friendship');
 const userRouter = require('./routes/user');
 const db = require('./utils/db');
 const { sendNotification } = require('./firebaseService'); // Import the notification function
+
+const multer = require('multer'); // For handling file uploads
+const { uploadFileToS3, getPresignedUrl } = require('./s3Service');
+const upload = multer(); // Use in-memory storage
 
 const app = express();
 app.use(express.json());
@@ -30,58 +20,112 @@ app.listen(3000, () => {
   console.log('Server runs at port 3000')
 })
 
+
+// Endpoint for uploading a file
+app.post('/api/uploadWallpaper', verifyToken, upload.single('file'), async (req, res) => {
+  const { folder } = req.body; // e.g., 'avatars' or 'wallpapers'
+  if (!req.file || !folder) {
+    return res.status(400).send('File and folder are required.');
+  }
+
+  try {
+    const fileKey = await uploadFileToS3(req.file.buffer, folder);
+    res.json({ success: true, fileKey });
+  } catch (err) {
+    res.status(500).send('Failed to upload file.');
+  }
+});
+
+// Endpoint for generating a presigned URL
+app.get('/api/getPresignedUrl', verifyToken, async (req, res) => {
+  const { fileName } = req.query;
+  if (!fileName) {
+    return res.status(400).send('File name is required.');
+  }
+
+  try {
+    const presignedUrl = await getPresignedUrl(fileName);
+    res.json({ success: true, url: presignedUrl });
+  } catch (err) {
+    res.status(500).send('Failed to generate presigned URL.');
+  }
+});
+
+
 app.post('/api/changeWallpaper', verifyToken, (req, res) => {
   const { fileName, recipientId, comment, reaction, type } = req.body;
   const requesterId = req.user.id;
 
-  // Insert wallpaper into the Wallpapers table with type provided by the client
-  const insertWallpaperQuery = `
-    INSERT INTO Wallpapers (fileName, type)
-    VALUES (?, ?)
+  // First, check if the friendship status is not blocked
+  const checkFriendshipStatusQuery = `
+    SELECT status FROM Friendships 
+    WHERE (requester_id = ? AND addressee_id = ?)
+      OR (requester_id = ? AND addressee_id = ?)
   `;
 
-  db.query(insertWallpaperQuery, [fileName, type], (err, wallpaperResults) => {
+  db.query(checkFriendshipStatusQuery, [requesterId, recipientId, recipientId, requesterId], (err, friendshipResults) => {
     if (err) {
-      return res.status(500).json({ errorCode: 'ERR_DB_INSERT_WALLPAPER', message: 'Could not insert wallpaper record.' });
+      //return res.status(500).json({ errorCode: 'ERR_DB_CHECK_FRIENDSHIP', message: 'Could not check the friendship status.' });
+      return res.status(500).send('Could not check the friendship status');
+    }
+    if (friendshipResults.length === 0 || friendshipResults[0].status === 'blocked') {
+      //return res.status(403).json({ errorCode: 'ERR_FRIENDSHIP_BLOCKED', message: 'Friendship is blocked, you cannot send wallpapers.' });
+      return res.status(403).send('You have been muted/deleted by your friend');
     }
 
-    const wallpaperId = wallpaperResults.insertId; // Get the wallpaper ID
+    // Fetch the recipient's push token
+    const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
+    db.query(getPushTokenQuery, [recipientId], (err, results) => {
+      if (err) {
+        return res.status(404).send('User did\'t provide push token, wallpaper was not sent');
+        //return res.status(500).json({ errorCode: 'ERR_DB_GET_PUSH_TOKEN', message: 'User did\'t provide push token, wallpaper was not sent' });
+      }
 
-    // Insert record into the SentWallpapers table with comment and reaction
-    const insertSentWallpaperQuery = `
-      INSERT INTO SentWallpapers (wallpaperId, requesterId, recipientId, comment, reaction)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    db.query(
-      insertSentWallpaperQuery,
-      [wallpaperId, requesterId, recipientId, comment, reaction],
-      (err, sentWallpaperResults) => {
+      if (results.length === 0 || !results[0].pushToken) {
+        return res.status(404).send('User did\'t provide push token, wallpaper was not sent');
+      }
+
+      const pushToken = results[0].pushToken;
+
+      // Insert wallpaper into the Wallpapers table with the type provided by the client
+      const insertWallpaperQuery = `
+        INSERT INTO Wallpapers (fileName, type)
+        VALUES (?, ?)
+      `;
+
+      db.query(insertWallpaperQuery, [fileName, type], (err, wallpaperResults) => {
         if (err) {
-          return res.status(500).json({ errorCode: 'ERR_DB_INSERT_SENT_WALLPAPER', message: 'Could not insert sent wallpaper record.' });
+          return res.status(500).json({ errorCode: 'ERR_DB_INSERT_WALLPAPER', message: 'Could not insert wallpaper record.' });
         }
 
-        // Update the last wallpaper in the Friendships table
-        const updateFriendshipQuery = `
-          UPDATE Friendships 
-          SET last_wallpaper_id = ?
-          WHERE (requester_id = ? AND addressee_id = ?)
-             OR (requester_id = ? AND addressee_id = ?)
-        `;
-        db.query(updateFriendshipQuery, [wallpaperId, requesterId, recipientId, recipientId, requesterId], (err) => {
-          if (err) {
-            return res.status(500).json({ errorCode: 'ERR_DB_UPDATE_FRIENDSHIP', message: 'Could not update friendship with last wallpaper.' });
-          }
+        const wallpaperId = wallpaperResults.insertId; // Get the wallpaper ID
 
-          // Fetch the recipient's push token for sending the notification
-          const query = 'SELECT pushToken FROM Users WHERE id = ?';
-          db.query(query, [recipientId], (err, results) => {
+        // Insert record into the SentWallpapers table with comment and reaction
+        const insertSentWallpaperQuery = `
+          INSERT INTO SentWallpapers (wallpaperId, requesterId, recipientId, comment, reaction)
+          VALUES (?, ?, ?, ?, ?)
+        `;
+        db.query(
+          insertSentWallpaperQuery,
+          [wallpaperId, requesterId, recipientId, comment, reaction],
+          (err, sentWallpaperResults) => {
             if (err) {
-              return res.status(500).json({ errorCode: 'ERR_DB_FETCH_PUSH_TOKEN', message: 'Could not fetch user push token.' });
+              return res.status(500).json({ errorCode: 'ERR_DB_INSERT_SENT_WALLPAPER', message: 'Could not insert sent wallpaper record.' });
             }
 
-            if (results.length > 0) {
-              const pushToken = results[0].pushToken;
+            // Update the last wallpaper in the Friendships table
+            const updateFriendshipQuery = `
+              UPDATE Friendships 
+              SET last_wallpaper_id = ?
+              WHERE (requester_id = ? AND addressee_id = ?)
+                 OR (requester_id = ? AND addressee_id = ?)
+            `;
+            db.query(updateFriendshipQuery, [wallpaperId, requesterId, recipientId, recipientId, requesterId], (err) => {
+              if (err) {
+                return res.status(500).json({ errorCode: 'ERR_DB_UPDATE_FRIENDSHIP', message: 'Could not update friendship with last wallpaper.' });
+              }
 
+              // Prepare and send the notification
               const message = {
                 data: {
                   type: 'wallpaper',
@@ -96,64 +140,35 @@ app.post('/api/changeWallpaper', verifyToken, (req, res) => {
               };
 
               sendNotification(message)
-            .then((result) => {
-              const responseData = {
-                fileName: fileName,
-                recipientId: recipientId,
-                comment: comment,
-                reaction: reaction,
-                type: type,
-                id: wallpaperId, // Add the wallpaper ID
-                timestamp: new Date().toISOString(), // Add the current timestamp
-                status: 'unread', // Default status, can be modified as needed
-                senderId: requesterId // Add the sender ID
-              };
-              res.json({
-                success: true,
-                data: responseData,
-                message: 'Wallpaper sent successfully.'
-              });
-            })
-            .catch(err => {
-              console.error('Failed to send notification:', err);
-              res.status(500).send('Failed to send notification.');
+                .then(() => {
+                  const responseData = {
+                    fileName: fileName,
+                    recipientId: recipientId,
+                    comment: comment,
+                    reaction: reaction,
+                    type: type,
+                    id: wallpaperId,
+                    timestamp: new Date().toISOString(),
+                    status: 'unread',
+                    senderId: requesterId
+                  };
+                  res.json({
+                    success: true,
+                    data: responseData,
+                    message: 'Wallpaper sent successfully.'
+                  });
+                })
+                .catch(err => {
+                  console.error('Failed to send notification:', err);
+                  res.status(500).send('User is not accessible');
+                });
             });
-
-              // admin.messaging().send(message)
-              //   .then((result) => {
-              //     // Create the response object with the new structure
-              //     const responseData = {
-              //       fileName: fileName,
-              //       recipientId: recipientId,
-              //       comment: comment,
-              //       reaction: reaction,
-              //       type: type,
-              //       id: wallpaperId, // Add the wallpaper ID
-              //       timestamp: new Date().toISOString(), // Add the current timestamp
-              //       status: 'unread', // Default status, can be modified as needed
-              //       senderId: requesterId // Add the sender ID
-              //     };
-
-              //     // Send the response with the required data structure
-              //     res.json({
-              //       success: true,
-              //       data: responseData,
-              //       message: 'Wallpaper sent successfully.'
-              //     });
-              //   })
-              //   .catch((error) => {
-              //     return res.status(500).json({ errorCode: 'ERR_NOTIFICATION_SEND', message: 'Error sending notification.', detail: error });
-              //   });
-            } else {
-              res.status(404).json({ errorCode: 'ERR_USER_NOT_FOUND', message: `User with id ${recipientId} not found.` });
-            }
-          });
-        });
-      }
-    );
+          }
+        );
+      });
+    });
   });
 });
-
 
 
 
@@ -259,8 +274,6 @@ app.get('/api/wallpaperHistory/:recipientId', verifyToken, (req, res) => {
       });
   });
 });
-
-
 
 
 app.post('/api/wallpaper/addReaction', verifyToken, (req, res) => {
@@ -665,24 +678,75 @@ app.post('/api/wallpaper/markMessagesAsRead', verifyToken, (req, res) => {
 // });
 
 
-
-
-
-
 app.post('/api/wallpaper/report', verifyToken, (req, res) => {
-  const { wallpaperId } = req.body
-  const userId = req.user.id
+  const { wallpaperId, reportedUserId } = req.body; 
+  const reporterId = req.user.id; // The ID of the user sending the request
 
-  const query = 'INSERT INTO Reports (wallpaperId, userId) VALUES (?, ?)'
-  db.query(query, [wallpaperId, userId], (err, results) => {
+  // Check if a report already exists
+  const checkQuery = `
+    SELECT id FROM Reports 
+    WHERE reportedUserId = ? AND reporterId = ?
+  `;
+  db.query(checkQuery, [reportedUserId, reporterId], (err, results) => {
     if (err) {
-      console.error('Database insert error: ' + err.message)
-      return res.status(500).send('ERROR: Could not report wallpaper.')
+      console.error('Database query error: ' + err.message);
+      return res.status(500).send('ERROR: Could not check existing reports.');
     }
 
-    res.json({ success: true })
-  })
-})
+    if (results.length > 0) {
+      // Report already exists
+      return res.status(400).json({ success: false, message: 'Report already exists.' });
+    }
+
+    // Insert the new report if no duplicate exists
+    const insertQuery = `
+      INSERT INTO Reports (wallpaperId, reportedUserId, reporterId) 
+      VALUES (?, ?, ?)
+    `;
+    db.query(insertQuery, [wallpaperId, reportedUserId, reporterId], (err, results) => {
+      if (err) {
+        console.error('Database insert error: ' + err.message);
+        return res.status(500).send('ERROR: Could not report wallpaper.');
+      }
+
+      res.json({ success: true });
+    });
+  });
+});
+
+
+// app.post('/api/wallpaper/report', verifyToken, (req, res) => {
+//   const { wallpaperId, reportedUserId } = req.body; 
+//   const reporterId = req.user.id; // The ID of the user sending the request
+
+//   // Update the query to insert the new fields
+//   const query = 'INSERT INTO Reports (wallpaperId, reportedUserId, reporterId) VALUES (?, ?, ?)';
+//   db.query(query, [wallpaperId, reportedUserId, reporterId], (err, results) => {
+//     if (err) {
+//       console.error('Database insert error: ' + err.message);
+//       return res.status(500).send('ERROR: Could not report wallpaper.');
+//     }
+
+//     res.json({ success: true });
+//   });
+// });
+
+
+
+// app.post('/api/wallpaper/report', verifyToken, (req, res) => {
+//   const { wallpaperId } = req.body
+//   const userId = req.user.id
+
+//   const query = 'INSERT INTO Reports (wallpaperId, userId) VALUES (?, ?)'
+//   db.query(query, [wallpaperId, userId], (err, results) => {
+//     if (err) {
+//       console.error('Database insert error: ' + err.message)
+//       return res.status(500).send('ERROR: Could not report wallpaper.')
+//     }
+
+//     res.json({ success: true })
+//   })
+// })
 
 app.get('/api/exploreWallpapers', verifyToken, (req, res) => {
   const page = parseInt(req.query.page) || 0; // Default to page 0
@@ -916,4 +980,17 @@ app.get('/api/loadSavedWallpapers', verifyToken, (req, res) => {
 });
 
 
-//module.exports = admin;
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connectivity
+    const dbCheckQuery = 'SELECT 1';
+    db.query(dbCheckQuery, (err) => {
+      if (err) {
+        return res.status(500).send('Server connectivity issue, try later');
+      }
+      res.status(200).send('All services are operational.');
+    });
+  } catch (error) {
+    res.status(500).send('Server is off, try again later');
+  }
+});

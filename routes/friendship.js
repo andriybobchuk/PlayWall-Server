@@ -41,7 +41,7 @@ router.post('/sendNotification', verifyToken, (req, res) => {
     })
     .catch(err => {
       console.error('Failed to send notification:', err);
-      res.status(500).send('ERROR: Failed to send notification.');
+      res.status(600).send('ERROR: Failed to send notification.');
     });
 });
 
@@ -55,15 +55,15 @@ router.post('/', verifyToken, (req, res) => {
 
   //res.status(500).send('Debug boy');
 
-  const getUserIdQuery = 'SELECT id, pushToken FROM Users WHERE email = ?';
-  db.query(getUserIdQuery, [email], (err, results) => {
+  const getUserIdQuery = 'SELECT id, pushToken FROM Users WHERE email = ? OR nick = ?';
+  db.query(getUserIdQuery, [email, email], (err, results) => {
     if (err) {
       console.error('Database query error: ' + err.message);
       return res.status(500).send('ERROR: Unable to find user due to a database error.');
     }
 
     if (results.length === 0) {
-      return res.status(404).send('ERROR: User not found with the provided email.');
+      return res.status(404).send('ERROR: User not found with the provided data');
     }
 
     const addresseeId = results[0].id;
@@ -71,7 +71,7 @@ router.post('/', verifyToken, (req, res) => {
 
     if (!pushToken) {
       console.error('No push token found for user with email:', email);
-      return res.status(404).send('ERROR: No push token found for the user. Friendship request NOT sent.');
+      return res.status(404).send('No push token found for the user. Friendship request NOT sent.');
     }
 
     const checkFriendshipQuery = `
@@ -124,7 +124,7 @@ router.post('/', verifyToken, (req, res) => {
               })
               .catch(err => {
                 console.error('Failed to send notification:', err);
-                res.status(500).send('ERROR: Failed to send notification due to an internal error.');
+                res.status(404).send('Failed to send notification because the user is logged out');
               });
           });
         }
@@ -153,11 +153,11 @@ router.post('/', verifyToken, (req, res) => {
 
           sendNotification(message)
             .then(() => {
-              res.status(200).send('SUCCESS: Friendship request sent.');
+              res.status(200).send('Friendship request sent.');
             })
             .catch(err => {
               console.error('Failed to send notification:', err);
-              res.status(500).send('ERROR: Failed to send notification due to an internal error.');
+              res.status(200).send('Request sent silently');
             });
         });
       }
@@ -190,7 +190,7 @@ router.get('/', verifyToken, (req, res) => {
     LEFT JOIN SentWallpapers s ON f.last_wallpaper_id = s.wallpaperId
     LEFT JOIN Wallpapers w ON s.wallpaperId = w.id
     WHERE (f.requester_id = ? OR f.addressee_id = ?)
-    AND (f.status = 'accepted' OR (f.status = 'blocked' AND f.requester_id = u.id))
+    AND (f.status = 'accepted' OR (f.status = 'pending' AND f.addressee_id = u.id) OR (f.status = 'blocked' AND f.requester_id = u.id))
     AND u.id <> ?
     ORDER BY w.dateCreated DESC
   `;
@@ -218,9 +218,6 @@ router.get('/', verifyToken, (req, res) => {
     res.status(200).json(friends);
   });
 });
-
-
-
 
 
 router.get('/requests', verifyToken, (req, res) => {
@@ -254,54 +251,13 @@ router.get('/requests', verifyToken, (req, res) => {
 });
 
 
-
-
-// router.post('/accept', verifyToken, (req, res) => {
-//   const userId = req.user.id; // ID of the user who accepted the request
-//   const { requesterId } = req.body; // ID of the user who sent the friend request
-
-//   console.log(`User id: ${userId}`);
-//   console.log(`Requester id: ${requesterId}`);
-
-//   const acceptFriendQuery = `
-//       UPDATE Friendships
-//       SET status = 'accepted'
-//       WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'
-//   `;
-
-//   db.query(acceptFriendQuery, [requesterId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Unable to accept friend request.');
-//     }
-
-//     // Retrieve the push token of the requester (user who sent the friend request)
-//     const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
-//     db.query(getPushTokenQuery, [requesterId], (err, tokenResults) => {
-//       if (err) {
-//         console.error('Database query error: ' + err.message);
-//         return res.status(500).send('ERROR: Could not fetch requester push token.');
-//       }
-
-//       if (tokenResults.length > 0) {
-//         const pushToken = tokenResults[0].pushToken;
-
-//         // Respond back to the client that the friend request was accepted
-//         res.status(200).send('Friend request accepted.');
-//       } else {
-//         res.status(404).send('Requester not found.');
-//       }
-//     });
-//   });
-// });
-
 router.post('/accept', verifyToken, (req, res) => {
   const userId = req.user.id; // ID of the user who accepted the request
   const { requesterId } = req.body; // ID of the user who sent the friend request
 
   const acceptFriendQuery = `
       UPDATE Friendships
-      SET status = 'accepted'
+      SET status = 'accepted' 
       WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'
   `;
 
@@ -355,7 +311,7 @@ router.post('/accept', verifyToken, (req, res) => {
               })
               .catch(err => {
                 console.error('Failed to send notification:', err);
-                res.status(500).send('ERROR: Friend request accepted, but failed to send notification.');
+                res.status(200).send('Request accepted silently');
               });
           } else {
             res.status(404).send('Requester not found.');
@@ -367,112 +323,127 @@ router.post('/accept', verifyToken, (req, res) => {
     });
   });
 });
+router.post('/getLinkRequestData', verifyToken, (req, res) => {
+  // Extract requesterId and code from the body instead of the query
+  const { requesterId, code } = req.body;
+
+  // First, validate the one-time code
+  const validateCodeQuery = 'SELECT nick, avatarId, email FROM Users WHERE id = ? AND oneTimeCode = ?';
+  db.query(validateCodeQuery, [requesterId, code], (err, results) => {
+    if (err) {
+      console.error('Database query error: ' + err.message);
+      return res.status(500).send('ERROR: Unable to validate code.');
+    }
+
+    if (results.length > 0) {
+      // Code is valid, return the user data
+      const userData = results[0];
+      res.status(200).json({
+        nick: userData.nick,
+        avatarId: userData.avatarId,
+        email: userData.email
+      });
+    } else {
+      // Invalid or expired code
+      res.status(401).send('Invalid or expired code.');
+    }
+  });
+});
+
+router.post('/sendOneTimeCode', verifyToken, (req, res) => {
+  const userId = req.user.id; // Extract the user ID from the token
+  const { oneTimeCode } = req.body; // Extract the one-time code from the request body
+
+  if (!oneTimeCode || isNaN(oneTimeCode)) {
+    return res.status(400).send('Invalid or missing one-time code.');
+  }
+
+  // Update the oneTimeCode column in the Users table
+  const updateCodeQuery = 'UPDATE Users SET oneTimeCode = ? WHERE id = ?';
+  db.query(updateCodeQuery, [oneTimeCode, userId], (err, results) => {
+    if (err) {
+      console.error('Database query error: ' + err.message);
+      return res.status(500).send('Unable to update one-time code.');
+    }
+
+    if (results.affectedRows > 0) {
+      res.status(200).json({
+        message: 'One-time code updated successfully.',
+        oneTimeCode: oneTimeCode
+      });
+    } else {
+      res.status(404).send('User not found.');
+    }
+  });
+});
 
 
-// router.post('/accept', verifyToken, (req, res) => {
-//   const userId = req.user.id; // ID of the user who accepted the request
-//   const { requesterId } = req.body; // ID of the user who sent the friend request
+router.post('/create-friendship-with-link', verifyToken, (req, res) => {
+  const recipientId = req.user.id; // ID of the user who clicked the link
+  const { requesterId, code } = req.body; // Extract requesterId and code from the body
 
-//   const acceptFriendQuery = `
-//       UPDATE Friendships
-//       SET status = 'accepted'
-//       WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'
-//   `;
+  // First, validate the one-time code
+  const validateCodeQuery = 'SELECT id FROM Users WHERE id = ? AND oneTimeCode = ?';
+  db.query(validateCodeQuery, [requesterId, code], (err, codeValidationResults) => {
+    if (err) {
+      console.error('Database query error: ' + err.message);
+      return res.status(500).send('Unable to validate code.');
+    }
 
-//   db.query(acceptFriendQuery, [requesterId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Unable to accept friend request.');
-//     }
+    if (codeValidationResults.length > 0) {
+      // Code is valid, proceed to create friendship
+      const createFriendshipQuery = `
+        INSERT INTO Friendships (requester_id, addressee_id, status)
+        VALUES (?, ?, 'accepted')
+      `;
 
-//     // Retrieve the push token of the requester (user who sent the friend request)
-//     const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
-//     db.query(getPushTokenQuery, [requesterId], (err, tokenResults) => {
-//       if (err) {
-//         console.error('Database query error: ' + err.message);
-//         return res.status(500).send('ERROR: Could not fetch requester push token.');
-//       }
+      db.query(createFriendshipQuery, [requesterId, recipientId], (err, results) => {
+        if (err) {
+          console.error('Database query error: ' + err.message);
+          return res.status(500).send('Unable to create friendship.');
+        }
 
-//       if (tokenResults.length > 0) {
-//         const pushToken = tokenResults[0].pushToken;
+        // Remove the one-time code to prevent reuse
+        const removeCodeQuery = 'UPDATE Users SET oneTimeCode = NULL WHERE id = ?';
+        db.query(removeCodeQuery, [requesterId], (err, removalResults) => {
+          if (err) {
+            console.error('Database query error: ' + err.message);
+          }
 
-//         //Send notification to the requester about the friend request acceptance
-//         const message = {
-//           data: {
-//             type: "friend_accept",
-//             initiatorId: requesterId.toString(),
-//             receiverId: userId.toString(),
-//             friendshipId: // here
-//           },
-//           token: pushToken,
-//         };
+          // Regardless of the outcome of removing the code, notify the requester
+          const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
+          db.query(getPushTokenQuery, [requesterId], (err, tokenResults) => {
+            if (err || tokenResults.length === 0) {
+              console.error('Failed to retrieve push token:', err ? err.message : 'Token not found.');
+              return res.status(404).send('ERROR: Requester not found.');
+            }
 
-//         sendNotification(message)
-//           .then(() => {
-//             res.status(200).send('Friend request accepted and notification sent.');
-//           })
-//           .catch(err => {
-//             console.error('Failed to send notification:', err);
-//             res.status(500).send('ERROR: Friend request accepted, but failed to send notification.');
-//           });
-//       } else {
-//         res.status(404).send('Requester not found.');
-//       }
-//     });
-//   });
-// });
+            const pushToken = tokenResults[0].pushToken;
+            const message = {
+              data: {
+                type: "friend_accept",
+                initiatorId: requesterId.toString(),
+                receiverId: recipientId.toString()
+              },
+              token: pushToken,
+            };
 
+            sendNotification(message)
+              .then(() => res.status(200).send('Friendship created and notification sent.'))
+              .catch(err => {
+                console.error('Failed to send notification:', err);
+                res.status(200).send('Friendship created silently');
+              });
+          });
+        });
+      });
+    } else {
+      // Invalid or expired code
+      res.status(401).send('Invalid or expired code.');
+    }
+  });
+});
 
-// // Function to send the acceptance notification
-// function sendAcceptanceNotification(pushToken) {
-//   if (!pushToken) {
-//     console.error('No push token available, cannot send notification.');
-//     return;
-//   }
-
-//   const message = {
-//     data: {
-//       type: "friend_acceptance",
-//     },
-//     token: pushToken,
-//   };
-
-//   admin
-//     .messaging()
-//     .send(message)
-//     .then((response) => {
-//       console.log(`Acceptance notification sent: ${response}`);
-//     })
-//     .catch((error) => {
-//       console.error('Error sending acceptance notification: ' + error.message);
-//     });
-// }
-
-
-
-// router.post('/decline', verifyToken, (req, res) => {
-//   const userId = req.user.id
-//   const { requesterId } = req.body
-
-//   const declineFriendQuery = `
-//       UPDATE Friendships
-//       SET status = 'declined'
-//       WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'
-//   `
-
-//   db.query(declineFriendQuery, [requesterId, userId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message)
-//       return res.status(500).send('ERROR: Unable to decline friend request.')
-//     }
-
-//     res.status(200).send('Friend request declined.')
-//   })
-// })
-
-// router.post('/update', (req, res) => {
-//   res.send('Friendship updated')
-// })
 
 router.post('/decline', verifyToken, (req, res) => {
   const userId = req.user.id;
@@ -495,99 +466,6 @@ router.post('/decline', verifyToken, (req, res) => {
 });
 
 
-// Remove friend by friendship_id
-// router.post('/removeFriend', verifyToken, (req, res) => {
-//   const { friendshipId } = req.body;
-
-//   const removeFriendQuery = `
-//     DELETE FROM Friendships
-//     WHERE friendship_id = ?
-//   `;
-
-//   db.query(removeFriendQuery, [friendshipId], (err, result) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not remove friend.');
-//     }
-
-//     res.json({ success: true, message: 'Friendship removed successfully.' });
-//   });
-// });
-
-// router.post('/removeFriend', verifyToken, (req, res) => {
-//   const { friendshipId } = req.body;
-
-//   // First, retrieve the requesterId and recipientId based on the friendshipId
-//   const getFriendshipDetailsQuery = `
-//     SELECT requester_id, addressee_id 
-//     FROM Friendships 
-//     WHERE friendship_id = ?
-//   `;
-
-//   db.query(getFriendshipDetailsQuery, [friendshipId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch friendship details.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     const { requester_id, addressee_id } = results[0];
-
-//     const removeFriendQuery = `
-//       DELETE FROM Friendships
-//       WHERE friendship_id = ?
-//     `;
-
-//     db.query(removeFriendQuery, [friendshipId], (err, result) => {
-//       if (err) {
-//         console.error('Database query error: ' + err.message);
-//         return res.status(500).send('ERROR: Could not remove friend.');
-//       }
-
-//       // Determine who should receive the notification
-//       const recipientId = (req.user.id === requester_id) ? addressee_id : requester_id;
-
-//       // Retrieve the push token of the recipient to send the notification
-//       const getPushTokenQuery = 'SELECT pushToken FROM Users WHERE id = ?';
-//       db.query(getPushTokenQuery, [recipientId], (err, tokenResults) => {
-//         if (err) {
-//           console.error('Database query error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not fetch recipient push token.');
-//         }
-
-//         if (tokenResults.length > 0) {
-//           const pushToken = tokenResults[0].pushToken;
-
-//           // Prepare the notification message
-//           const message = {
-//             data: {
-//               type: "friend_remove",
-//               requesterId: req.user.id.toString(),
-//               recipientId: recipientId.toString(),
-//               friendshipId: friendshipId.toString(),
-//             },
-//             token: pushToken,
-//           };
-
-//           // Send the notification
-//           sendNotification(message)
-//             .then(() => {
-//               res.json({ success: true, message: 'Friendship removed successfully and notification sent.' });
-//             })
-//             .catch(err => {
-//               console.error('Failed to send notification:', err);
-//               res.status(500).send('ERROR: Friendship removed, but failed to send notification.');
-//             });
-//         } else {
-//           res.status(404).send('ERROR: Recipient not found for notification.');
-//         }
-//       });
-//     });
-//   });
-// });
 
 router.post('/removeFriend', verifyToken, (req, res) => {
   const { friendshipId } = req.body;
@@ -660,7 +538,7 @@ router.post('/removeFriend', verifyToken, (req, res) => {
             })
             .catch(err => {
               console.error('Failed to send notification:', err);
-              res.status(500).send('ERROR: Friendship removed, but failed to send notification.');
+              res.status(200).send('Friendship removed silently');
             });
         } else {
           res.status(404).send('ERROR: Recipient not found for notification.');
@@ -672,104 +550,6 @@ router.post('/removeFriend', verifyToken, (req, res) => {
 
 
 
-// // Block friend by friendship_id and switch requester/addressee if needed
-// router.post('/block', verifyToken, (req, res) => {
-//   const { friendshipId, userIdToBlock } = req.body; // person being blocked
-//   const userId = req.user.id; // person initiating the block
-
-//   // First, retrieve the current requester and addressee for the friendship
-//   const getFriendshipQuery = `
-//     SELECT requester_id, addressee_id FROM Friendships WHERE friendship_id = ?
-//   `;
-
-//   db.query(getFriendshipQuery, [friendshipId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch friendship.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     const { requester_id, addressee_id } = results[0];
-
-//     // Check who is blocking whom and swap if needed
-//     let newRequesterId = requester_id;
-//     let newAddresseeId = addressee_id;
-
-//     if (userIdToBlock === addressee_id && userId === requester_id) {
-//       // User 1 is blocking User 2 (already requester)
-//       // No need to switch.
-//     } else if (userIdToBlock === requester_id && userId === addressee_id) {
-//       // User 2 (addressee) is blocking User 1 (requester), swap them.
-//       newRequesterId = addressee_id;
-//       newAddresseeId = requester_id;
-//     } else {
-//       return res.status(400).send('ERROR: Invalid block request.');
-//     }
-
-//     // Update the friendship to 'blocked' with the proper requester/addressee
-//     const blockQuery = `
-//       UPDATE Friendships
-//       SET requester_id = ?, addressee_id = ?, status = 'blocked'
-//       WHERE friendship_id = ?
-//     `;
-
-//     db.query(blockQuery, [newRequesterId, newAddresseeId, friendshipId], (err, results) => {
-//       if (err) {
-//         console.error('Database update error: ' + err.message);
-//         return res.status(500).send('ERROR: Could not block user.');
-//       }
-
-//       res.json({ success: true, message: 'User blocked successfully.' });
-//     });
-//   });
-// });
-
-// // Block friend by friendship_id and ensure the blocker becomes the addressee
-// router.post('/block', verifyToken, (req, res) => {
-//   const { friendshipId, userIdToBlock } = req.body; // person being blocked
-//   const userId = req.user.id; // person initiating the block
-
-//   // First, retrieve the current requester and addressee for the friendship
-//   const getFriendshipQuery = `
-//     SELECT requester_id, addressee_id FROM Friendships WHERE friendship_id = ?
-//   `;
-
-//   db.query(getFriendshipQuery, [friendshipId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch friendship.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     const { requester_id, addressee_id } = results[0];
-
-//     // Regardless of previous roles, the user initiating the block always becomes the addressee
-//     let newRequesterId = userIdToBlock;
-//     let newAddresseeId = userId;
-
-//     // Update the friendship to 'blocked' and ensure the blocker is the addressee
-//     const blockQuery = `
-//       UPDATE Friendships
-//       SET requester_id = ?, addressee_id = ?, status = 'blocked'
-//       WHERE friendship_id = ?
-//     `;
-
-//     db.query(blockQuery, [newRequesterId, newAddresseeId, friendshipId], (err, results) => {
-//       if (err) {
-//         console.error('Database update error: ' + err.message);
-//         return res.status(500).send('ERROR: Could not block user.');
-//       }
-
-//       res.json({ success: true, message: 'User blocked successfully.' });
-//     });
-//   });
-// });
 // Block friend by friendship_id and ensure the blocker becomes the addressee
 router.post('/block', verifyToken, (req, res) => {
   const { friendshipId, userIdToBlock } = req.body; // person being blocked
@@ -843,7 +623,7 @@ router.post('/block', verifyToken, (req, res) => {
             })
             .catch(err => {
               console.error('Failed to send notification:', err);
-              res.status(500).send('ERROR: User blocked, but failed to send notification.');
+              res.status(200).send('User blocked silently');
             });
         } else {
           res.status(404).send('ERROR: User to be blocked not found for notification.');
@@ -853,49 +633,6 @@ router.post('/block', verifyToken, (req, res) => {
   });
 });
 
-
-// // Unblock user by friendship_id
-// router.post('/unblock', verifyToken, (req, res) => {
-//   const { friendshipId } = req.body; // person to be unblocked
-
-//   // Fetch the friendship details
-//   const getFriendshipQuery = `
-//     SELECT status FROM Friendships WHERE friendship_id = ?
-//   `;
-
-//   db.query(getFriendshipQuery, [friendshipId], (err, results) => {
-//     if (err) {
-//       console.error('Database query error: ' + err.message);
-//       return res.status(500).send('ERROR: Could not fetch friendship.');
-//     }
-
-//     if (results.length === 0) {
-//       return res.status(404).send('ERROR: Friendship not found.');
-//     }
-
-//     const { status } = results[0];
-
-//     // Proceed to unblock the friendship regardless of requester/addressee roles
-//     if (status === 'blocked') {
-//       const unblockQuery = `
-//         UPDATE Friendships
-//         SET status = 'accepted'
-//         WHERE friendship_id = ? AND status = 'blocked'
-//       `;
-
-//       db.query(unblockQuery, [friendshipId], (err, results) => {
-//         if (err) {
-//           console.error('Database update error: ' + err.message);
-//           return res.status(500).send('ERROR: Could not unblock user.');
-//         }
-
-//         res.json({ success: true, message: 'User unblocked successfully.' });
-//       });
-//     } else {
-//       return res.status(400).send('ERROR: Friendship is not blocked.');
-//     }
-//   });
-// });
 
 
 // Unblock user by friendship_id
@@ -970,7 +707,7 @@ router.post('/unblock', verifyToken, (req, res) => {
             })
             .catch(err => {
               console.error('Failed to send notification:', err);
-              res.status(500).send('ERROR: User unblocked, but failed to send notification.');
+              res.status(200).send('User unblocked silently');
             });
         } else {
           res.status(404).send('ERROR: User to be unblocked not found for notification.');
